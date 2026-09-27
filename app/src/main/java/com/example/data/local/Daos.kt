@@ -20,6 +20,9 @@ interface FavoriteDao {
     @Query("SELECT path FROM favorites")
     suspend fun getAllFavoritePathsSync(): List<String>
 
+    @Query("SELECT path FROM favorites ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
 
