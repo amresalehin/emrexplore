@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Movie
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -225,8 +230,7 @@ fun GalleryScreen(
             }
         }
 
-        // Body
-        if (uiState.isLoadingMedia) {
+        // Aves-style contextual selection bar. Selection is limited to explicitly selected items.\n        if (uiState.gallerySelection.isNotEmpty()) {\n            GallerySelectionBar(\n                count = uiState.gallerySelection.size,\n                onClear = { viewModel.clearGallerySelection() },\n                onFavorite = { viewModel.favoriteGallerySelection() },\n                onShare = {\n                    val uris = ArrayList(uiState.gallerySelection.map { it.uri })\n                    try {\n                        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {\n                            type = "*/*"\n                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)\n                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)\n                        }\n                        context.startActivity(Intent.createChooser(intent, "Share ${uiState.gallerySelection.size} items"))\n                    } catch (_: ActivityNotFoundException) {\n                        viewModel.showMessage("No app available to share these items")\n                    }\n                },\n                onDelete = { viewModel.deleteGallerySelection() }\n            )\n        }\n\n        // Body\n        if (uiState.isLoadingMedia) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -243,9 +247,14 @@ fun GalleryScreen(
                     items = albumItems,
                     columns = uiState.galleryColumns,
                     onItemClick = { item ->
-                        val loaded = albumItems.itemSnapshotList.items.filterNotNull()
-                        viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
-                    }
+                        if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
+                        else {
+                            val loaded = albumItems.itemSnapshotList.items.filterNotNull()
+                            viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
+                        }
+                    },
+                    onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
+                    selectedPaths = uiState.gallerySelection.map { it.path }.toSet()
                 )
             }
         } else {
@@ -255,9 +264,14 @@ fun GalleryScreen(
                         items = pagedMedia,
                         columns = uiState.galleryColumns,
                         onItemClick = { item ->
+                            if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
+                            else {
                             val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
                             viewModel.openFullscreenMedia(item, loaded, when (uiState.galleryFilter) {\n                                "PHOTOS" -> FullscreenMediaSource.PHOTOS\n                                "VIDEOS" -> FullscreenMediaSource.VIDEOS\n                                "FAVORITES" -> FullscreenMediaSource.FAVORITES\n                                else -> FullscreenMediaSource.ALL\n                            })
-                        }
+                            }
+                        },
+                        onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
+                        selectedPaths = uiState.gallerySelection.map { it.path }.toSet()
                     )
                 }
                 GallerySubTab.ALBUMS -> {
@@ -279,7 +293,9 @@ fun GalleryScreen(
 private fun PagedMediaGrid(
     items: androidx.paging.compose.LazyPagingItems<MediaItem>,
     columns: Int,
-    onItemClick: (MediaItem) -> Unit
+    onItemClick: (MediaItem) -> Unit,
+    onItemLongClick: (MediaItem) -> Unit = {},
+    selectedPaths: Set<String> = emptySet()
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
@@ -297,7 +313,9 @@ private fun PagedMediaGrid(
             if (item != null) {
                 MediaGridThumbnail(
                     item = item,
-                    onClick = { onItemClick(item) }
+                    onClick = { onItemClick(item) },
+                    onLongClick = { onItemLongClick(item) },
+                    selected = item.path in selectedPaths
                 )
             }
         }
@@ -362,7 +380,9 @@ private fun MediaGrid(
 @Composable
 private fun MediaGridThumbnail(
     item: MediaItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
+    selected: Boolean = false
 ) {
     val context = LocalContext.current
     val imageRequest = remember(item.uri) {
@@ -379,7 +399,7 @@ private fun MediaGridThumbnail(
             .fillMaxWidth()
             .aspectRatio(1f)
             .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
         AsyncImage(
             model = imageRequest,
@@ -425,8 +445,7 @@ private fun MediaGridThumbnail(
             }
         }
 
-        // Favorite star indicator
-        if (item.isFavorite) {
+        if (selected) {\n            Box(\n                modifier = Modifier\n                    .align(Alignment.TopStart)\n                    .padding(6.dp)\n                    .size(24.dp)\n                    .background(MaterialTheme.colorScheme.primary, CircleShape),\n                contentAlignment = Alignment.Center\n            ) {\n                Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))\n            }\n        }\n\n        // Favorite star indicator\n        if (item.isFavorite && !selected) {
             Icon(
                 imageVector = Icons.Default.Star,
                 contentDescription = "Favorite",
@@ -436,6 +455,28 @@ private fun MediaGridThumbnail(
                     .padding(6.dp)
                     .size(18.dp)
             )
+        }
+    }
+}
+
+@Composable
+private fun GallerySelectionBar(
+    count: Int,
+    onClear: () -> Unit,
+    onFavorite: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, tonalElevation = 3.dp) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onClear) { Icon(Icons.Default.Close, contentDescription = "Clear selection") }
+            Text("$count selected", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onFavorite) { Icon(Icons.Default.Star, contentDescription = "Favorite selected") }
+            IconButton(onClick = onShare) { Icon(Icons.Default.Share, contentDescription = "Share selected") }
+            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete selected") }
         }
     }
 }
