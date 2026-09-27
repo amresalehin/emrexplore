@@ -286,6 +286,10 @@ Completed:
 - Favorite ordering is deterministic and supports direct position/count lookup.
 - Standalone file-manager media opens remain supported without requiring a MediaStore position lookup.
 
+Additional hardening completed:
+- Viewer window loads are cancelled when a newer viewer request or close occurs.
+- Favorite position lookup uses the Room favorite timestamp rather than media capture date.
+
 Validation still required:
 - Full Android Gradle compile.
 - Real-device navigation through large timelines, albums, and favorites.
@@ -331,4 +335,4 @@ Next capability groups:
 - Metadata: direct inspector integration, GPS/location, safe metadata editing.
 - Intelligence: OCR, objects, captions, people, embeddings and semantic search only after deterministic browsing is complete.
 
-| 2026-09-27 | fb54089 | Deterministic favorite ordering | Favorite pages and viewer position lookup now share timestamp + path ordering |\n| 2026-09-27 | ef30c4e | Bounded viewer position/count resolution | MediaStore/album/favorite viewers can resolve absolute positions without the gallery snapshot |\n| 2026-09-27 | 50e3b41 | Viewer ViewModel migration | Fullscreen state now stores source, absolute index, bounded window and total count |\n| 2026-09-27 | ba49d2b | Gallery source wiring | Timeline and album clicks pass the correct fullscreen source |\n| 2026-09-27 | fb2c46b | Bounded viewer UI | Filmstrip and navigation operate on window-local items plus absolute positions |\n| 2026-09-27 | d79b462 | MainActivity viewer wiring | Viewer no longer reconstructs navigation from the Paging snapshot |\n| 2026-09-27 | a379aca | Aves-class roadmap | Added media-management capability roadmap and performance invariant |\n
+| 2026-09-27 | fb54089 | Deterministic favorite ordering | Favorite pages and viewer position lookup now share timestamp + path ordering |\n| 2026-09-27 | ef30c4e | Bounded viewer position/count resolution | MediaStore/album/favorite viewers can resolve absolute positions without the gallery snapshot |\n| 2026-09-27 | 50e3b41 | Viewer ViewModel migration | Fullscreen state now stores source, absolute index, bounded window and total count |\n| 2026-09-27 | ba49d2b | Gallery source wiring | Timeline and album clicks pass the correct fullscreen source |\n| 2026-09-27 | fb2c46b | Bounded viewer UI | Filmstrip and navigation operate on window-local items plus absolute positions |\n| 2026-09-27 | d79b462 | MainActivity viewer wiring | Viewer no longer reconstructs navigation from the Paging snapshot |\n| 2026-09-27 | a379aca | Aves-class roadmap | Added media-management capability roadmap and performance invariant |\n| 2026-09-27 | e3c995b | Favorite timestamp lookup | Viewer position now uses the actual favorite ordering key |\n| 2026-09-27 | d512c0f | Favorite position fix | Corrected favorite navigation ordering |\n| 2026-09-27 | 238409e | Viewer cancellation | Stale fullscreen window requests are cancelled |\n
