@@ -18,6 +18,8 @@ import com.example.data.model.StorageStats
 import com.example.data.model.ViewMode
 import com.example.data.media.MediaFilter
 import com.example.data.media.MediaRepository
+import com.example.data.media.FullscreenMediaSource
+import com.example.data.media.MediaViewerWindow
 import com.example.data.model.ConflictResolution
 import com.example.data.model.FileOperationProgress
 import com.example.data.model.OperationStatus
@@ -107,6 +109,11 @@ data class UiState(
     // Viewers & Modals
     val fullscreenMediaIndex: Int? = null,
     val fullscreenMediaList: List<MediaItem> = emptyList(),
+    val fullscreenWindowStartIndex: Int = 0,
+    val fullscreenTotalCount: Int = 0,
+    val fullscreenSource: FullscreenMediaSource? = null,
+    val fullscreenAlbumId: String? = null,
+    val fullscreenLoading: Boolean = false,
     val activeTextFile: FileItem? = null,
     val textFileContent: String = "",
     val isEditingText: Boolean = false,
@@ -824,12 +831,55 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         galleryRefreshFlow.value = System.currentTimeMillis()
     }
 
-    fun openFullscreenMedia(item: MediaItem, list: List<MediaItem>) {
-        val index = list.indexOfFirst { it.path == item.path }.takeIf { it >= 0 } ?: 0
+    fun openFullscreenMedia(
+        item: MediaItem,
+        list: List<MediaItem>,
+        source: FullscreenMediaSource? = null,
+        albumId: String? = null
+    ) {
+        val fallbackIndex = list.indexOfFirst { it.path == item.path }.takeIf { it >= 0 } ?: 0
         _uiState.update {
             it.copy(
-                fullscreenMediaIndex = index,
-                fullscreenMediaList = list
+                fullscreenMediaIndex = fallbackIndex,
+                fullscreenMediaList = listOf(item),
+                fullscreenWindowStartIndex = fallbackIndex,
+                fullscreenTotalCount = list.size,
+                fullscreenSource = source,
+                fullscreenAlbumId = albumId,
+                fullscreenLoading = source != null
+            )
+        }
+        if (source == null) return
+        viewModelScope.launch {
+            try {
+                val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId)
+                val window = mediaRepository.loadViewerWindow(source, absoluteIndex, radius = 2, albumId = albumId)
+                _uiState.update {
+                    it.copy(
+                        fullscreenMediaIndex = absoluteIndex,
+                        fullscreenMediaList = window.items,
+                        fullscreenWindowStartIndex = window.startIndex,
+                        fullscreenTotalCount = window.totalCount,
+                        fullscreenLoading = false
+                    )
+                }
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _uiState.update { it.copy(fullscreenLoading = false) }
+            }
+        }
+    }
+
+    fun openStandaloneFullscreenMedia(item: MediaItem) {
+        _uiState.update {
+            it.copy(
+                fullscreenMediaIndex = 0,
+                fullscreenMediaList = listOf(item),
+                fullscreenWindowStartIndex = 0,
+                fullscreenTotalCount = 1,
+                fullscreenSource = null,
+                fullscreenAlbumId = null,
+                fullscreenLoading = false
             )
         }
     }
@@ -838,24 +888,53 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = null,
-                fullscreenMediaList = emptyList()
+                fullscreenMediaList = emptyList(),
+                fullscreenWindowStartIndex = 0,
+                fullscreenTotalCount = 0,
+                fullscreenSource = null,
+                fullscreenAlbumId = null,
+                fullscreenLoading = false
             )
+        }
+    }
+
+    fun moveFullscreenMedia(targetIndex: Int) {
+        val state = _uiState.value
+        val source = state.fullscreenSource ?: return
+        val total = state.fullscreenTotalCount
+        if (targetIndex !in 0 until total || state.fullscreenLoading) return
+        if (targetIndex in state.fullscreenWindowStartIndex until (state.fullscreenWindowStartIndex + state.fullscreenMediaList.size)) {
+            _uiState.update { it.copy(fullscreenMediaIndex = targetIndex) }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(fullscreenLoading = true, fullscreenMediaIndex = targetIndex) }
+            try {
+                val window = mediaRepository.loadViewerWindow(source, targetIndex, radius = 2, albumId = state.fullscreenAlbumId)
+                _uiState.update {
+                    it.copy(
+                        fullscreenMediaList = window.items,
+                        fullscreenWindowStartIndex = window.startIndex,
+                        fullscreenTotalCount = window.totalCount,
+                        fullscreenMediaIndex = targetIndex,
+                        fullscreenLoading = false
+                    )
+                }
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                _uiState.update { it.copy(fullscreenLoading = false) }
+            }
         }
     }
 
     fun nextMedia() {
         val curr = _uiState.value.fullscreenMediaIndex ?: return
-        val list = _uiState.value.fullscreenMediaList
-        if (curr < list.lastIndex) {
-            _uiState.update { it.copy(fullscreenMediaIndex = curr + 1) }
-        }
+        moveFullscreenMedia(curr + 1)
     }
 
     fun previousMedia() {
         val curr = _uiState.value.fullscreenMediaIndex ?: return
-        if (curr > 0) {
-            _uiState.update { it.copy(fullscreenMediaIndex = curr - 1) }
-        }
+        moveFullscreenMedia(curr - 1)
     }
 
     // --- Browse / Categories Actions ---
@@ -897,7 +976,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         isVideo = fileItem.isVideo,
                         isFavorite = fileItem.isFavorite
                     )
-                    openFullscreenMedia(mediaItem, listOf(mediaItem))
+                    openStandaloneFullscreenMedia(mediaItem)
                 }
                 fileItem.isAudio -> {
                     playAudio(fileItem)
@@ -1083,10 +1162,11 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val isNowFav = repository.toggleFavorite(fileItem)
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
 
-            val updatedFsList = _uiState.value.fullscreenMediaList.map { media ->
-                if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+            _uiState.update { state ->
+                state.copy(fullscreenMediaList = state.fullscreenMediaList.map { media ->
+                    if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+                })
             }
-            _uiState.update { it.copy(fullscreenMediaList = updatedFsList) }
             loadFiles()
             refreshGallery()
         }
