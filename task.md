@@ -88,9 +88,9 @@ Goal: Gallery must remain responsive with very large media libraries.
 
 ### Favorites
 
-- [ ] Define a scalable favorite source.
-- [ ] Avoid rebuilding the entire MediaStore dataset just to display favorites.
-- [ ] Convert favorites to a Paging-compatible source.
+- [x] Define a scalable favorite source backed by the app’s Room favorite paths.
+- [x] Avoid rebuilding the entire MediaStore dataset just to display favorites.
+- [x] Convert favorites to a Paging-compatible source.
 - [ ] Ensure favorite/unfavorite updates invalidate only affected data.
 - [ ] Test large favorite collections.
 
@@ -289,7 +289,7 @@ The performance architecture is considered ready only when:
 
 1. Compile and validate the current Paging implementation.
 2. Finish album count strategy and device-test album discovery.
-3. Finish Favorites without full-media loading.
+3. Device-test Favorites Paging and refine invalidation.
 4. Fix fullscreen navigation across unloaded pages.
 5. Audit cancellation and stale-work behavior.
 6. Optimize thumbnail/cache behavior under rapid scrolling.
