@@ -267,3 +267,22 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | 821c97a | Remove duplicate favorite Paging collection | Shared gallery Paging flow now selects Favorites directly |
 | 2026-09-27 | d22c50e | Fix album refresh coroutine | Album refresh no longer calls suspend repository from click handler |
 | 2026-09-27 | 16649bc | Remove legacy Gallery loads | File operations no longer trigger full MediaStore materialization |
+
+
+### Phase 3.3 — Fullscreen bounded-window groundwork
+Status: **IN PROGRESS**
+
+Implemented:
+- Added a repository-side fullscreen loader that reuses the canonical timeline, Favorites, and album PagingSources.
+- Viewer requests are positional and bounded rather than copying the currently loaded gallery snapshot.
+- PagingSources now honor small load sizes, allowing a 5-item viewer window instead of forcing a 60–120 item page.
+
+Remaining:
+- Wire the viewer state to an absolute gallery position rather than a local list index.
+- Load the initial ±2 adjacent items around the tapped item.
+- Support previous/next across unloaded Paging windows.
+- Keep the filmstrip bounded to the same small window.
+- Add cancellation for rapid previous/next navigation.
+- Validate behavior against large libraries on a real device.
+
+This approach keeps fullscreen navigation on the same query/paging architecture while avoiding a full-library in-memory viewer dataset.
