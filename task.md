@@ -97,9 +97,9 @@ Goal: Gallery must remain responsive with very large media libraries.
 ### Fullscreen Viewer
 
 - [ ] Stop relying on the currently loaded Paging snapshot as the complete viewer dataset.
-- [ ] Design a dedicated adjacent-item loader.
+- [x] Design and implement a dedicated bounded adjacent-item loader.
 - [ ] Support previous/next across unloaded pages.
-- [ ] Preload only a small number of adjacent items.
+- [x] Add bounded 5-item fullscreen window loading (UI wiring still pending).
 - [ ] Keep fullscreen memory bounded.
 - [ ] Avoid decoding full-resolution images until needed.
 
@@ -252,6 +252,8 @@ For every dataset record:
 These are specifically related to the current Paging implementation.
 
 - [ ] Compile the current branch.
+- [x] Add repository-side fullscreen window loading that reuses the canonical PagingSources.
+- [x] Allow PagingSources to honor small load sizes for bounded fullscreen windows.
 - [ ] Verify `MediaStorePagingSource` query behavior on Android 10+.
 - [ ] Verify API <26 query fallback.
 - [ ] Verify `BUCKET_ID` / `BUCKET_DISPLAY_NAME` availability.
@@ -299,6 +301,8 @@ The performance architecture is considered ready only when:
 10. Complete memory/I/O stress testing.
 
 Last updated: 2026-09-27
+
+Fullscreen implementation note: repository support now loads a 5-item window around an absolute position from the same timeline/favorites/album PagingSources; UI/ViewModel wiring remains the next step.
 
 Static validation pass: removed all normal runtime calls to the legacy full-library `loadMedia()` path; Gallery browsing now relies on Paging/album discovery.
 
