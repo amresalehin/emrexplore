@@ -31,16 +31,28 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ui.components.AllFilesAccessDialog
 import com.example.ui.components.AudioMiniPlayer
+import com.example.ui.components.FileOperationBanner
 import com.example.ui.components.StoragePermissionBanner
 import com.example.ui.components.getRequiredStoragePermissions
+import com.example.ui.components.isAllFilesAccessGranted
+import com.example.ui.components.launchAllFilesAccessSettings
 import com.example.ui.screens.FileExplorerScreen
 import com.example.ui.screens.FilePropertiesDialog
 import com.example.ui.screens.FullscreenMediaViewer
@@ -90,8 +102,33 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun MainAppRoot(viewModel: UnifiedViewModel) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+
+    var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
+    var showAllFilesDialog by rememberSaveable {
+        mutableStateOf(!isAllFilesAccessGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+    }
+
+    val allFilesLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        val granted = isAllFilesAccessGranted()
+        allFilesAccessGranted = granted
+        if (granted) {
+            viewModel.onPermissionsGranted()
+        }
+    }
+
+    // Automatically check and refresh when the activity resumes (e.g. returning from system settings)
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val granted = isAllFilesAccessGranted()
+        allFilesAccessGranted = granted
+        if (granted) {
+            viewModel.onPermissionsGranted()
+        }
+    }
 
     // Accompanist Permissions setup for reading and writing files to external storage
     val storagePermissions = remember { getRequiredStoragePermissions() }
@@ -100,9 +137,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     ) { permissionsResultMap ->
         val anyGranted = permissionsResultMap.values.any { it }
         if (anyGranted) {
-            viewModel.loadFiles()
-            viewModel.loadMedia()
-            viewModel.loadStorageStats()
+            viewModel.onPermissionsGranted()
         }
     }
 
@@ -116,8 +151,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     // Reactively refresh data when permissions are newly granted
     LaunchedEffect(storagePermissionsState.allPermissionsGranted) {
         if (storagePermissionsState.allPermissionsGranted && uiState.files.isEmpty()) {
-            viewModel.loadFiles()
-            viewModel.loadStorageStats()
+            viewModel.onPermissionsGranted()
         }
     }
 
@@ -138,6 +172,17 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.navigationBars)
             ) {
+                // Decoupled Background File Operation Progress Banner & Controls
+                FileOperationBanner(
+                    progress = uiState.fileOperationProgress,
+                    onPause = { viewModel.pauseFileOperation() },
+                    onResume = { viewModel.resumeFileOperation() },
+                    onCancel = { viewModel.cancelFileOperation() },
+                    onRetry = { viewModel.retryFileOperation() },
+                    onDismiss = { viewModel.dismissFileOperation() },
+                    onResolveConflict = { resolution -> viewModel.resolveFileConflict(resolution) }
+                )
+
                 // Audio mini-player bar above navigation
                 AudioMiniPlayer(
                     activeAudio = uiState.activeAudioFile,
@@ -185,8 +230,14 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Accompanist Permissions Banner for external storage access
-            StoragePermissionBanner(permissionsState = storagePermissionsState)
+            // Permissions Banner for external storage & All Files Access
+            StoragePermissionBanner(
+                permissionsState = storagePermissionsState,
+                allFilesAccessGranted = allFilesAccessGranted,
+                onGrantAllFilesAccess = {
+                    launchAllFilesAccessSettings(context, allFilesLauncher)
+                }
+            )
 
             Box(
                 modifier = Modifier
@@ -264,6 +315,19 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
         FilePropertiesDialog(
             item = uiState.activeDetailItem!!,
             onDismiss = { viewModel.closeProperties() }
+        )
+    }
+
+    // 5. Initial All Files Access Prompt Dialog
+    if (showAllFilesDialog && !allFilesAccessGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        AllFilesAccessDialog(
+            onConfirm = {
+                showAllFilesDialog = false
+                launchAllFilesAccessSettings(context, allFilesLauncher)
+            },
+            onDismiss = {
+                showAllFilesDialog = false
+            }
         )
     }
 }

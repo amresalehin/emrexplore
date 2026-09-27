@@ -226,4 +226,127 @@ class ExampleRobolectricTest {
     testDir.deleteRecursively()
   }
 
+  @Test
+  fun `verify all files access intent creation`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val intent = com.example.ui.components.createAllFilesAccessIntent(context)
+    org.junit.Assert.assertNotNull(intent)
+    org.junit.Assert.assertNotNull(intent.action)
+  }
+
+  @Test
+  fun `verify all files access check executes without exception`() {
+    val isGranted = com.example.ui.components.isAllFilesAccessGranted()
+    // Returns boolean without crash
+    assertTrue(isGranted == true || isGranted == false)
+  }
+
+  @Test
+  fun `verify IO priority coordinator interactive flag and yield`() {
+    kotlinx.coroutines.runBlocking {
+      com.example.data.performance.IoPriorityCoordinator.reset()
+      org.junit.Assert.assertFalse(com.example.data.performance.IoPriorityCoordinator.isInteractiveActive())
+
+      com.example.data.performance.IoPriorityCoordinator.notifyInteractiveActivity()
+      assertTrue(com.example.data.performance.IoPriorityCoordinator.isInteractiveActive())
+
+      // Running inside interactive block
+      val result = com.example.data.performance.IoPriorityCoordinator.withInteractivePriority {
+        assertTrue(com.example.data.performance.IoPriorityCoordinator.isInteractiveActive())
+        42
+      }
+      assertEquals(42, result)
+    }
+  }
+
+  @Test
+  fun `verify file operation manager copy with progress and completion`() {
+    kotlinx.coroutines.runBlocking {
+      val context = ApplicationProvider.getApplicationContext<Context>()
+      val testSrcDir = java.io.File(context.cacheDir, "op_src_test_${System.currentTimeMillis()}").apply { mkdirs() }
+      val testDestDir = java.io.File(context.cacheDir, "op_dest_test_${System.currentTimeMillis()}").apply { mkdirs() }
+
+      val file1 = java.io.File(testSrcDir, "sample1.txt").apply { writeText("Hello World Performance") }
+      val file2 = java.io.File(testSrcDir, "sample2.txt").apply { writeText("Second file test") }
+
+      var mutatedPaths = emptyList<String>()
+      val manager = com.example.data.operations.FileOperationManager { affected ->
+        mutatedPaths = affected
+      }
+
+      manager.startCopy(listOf(file1.absolutePath, file2.absolutePath), testDestDir.absolutePath)
+
+      // Wait for operation completion
+      var loops = 0
+      while (manager.progress.value.status != com.example.data.model.OperationStatus.COMPLETED && loops < 50) {
+        kotlinx.coroutines.delay(100)
+        loops++
+      }
+
+      assertEquals(com.example.data.model.OperationStatus.COMPLETED, manager.progress.value.status)
+      assertEquals(2, manager.progress.value.filesProcessed)
+      assertTrue(java.io.File(testDestDir, "sample1.txt").exists())
+      assertTrue(java.io.File(testDestDir, "sample2.txt").exists())
+
+      testSrcDir.deleteRecursively()
+      testDestDir.deleteRecursively()
+    }
+  }
+
+  @Test
+  fun `verify large directory lazy paged loading with 1000 files`() {
+    kotlinx.coroutines.runBlocking {
+      val context = ApplicationProvider.getApplicationContext<Context>()
+      val repo = com.example.data.repository.FileRepository(context)
+      val massiveDir = java.io.File(context.cacheDir, "massive_1000_${System.currentTimeMillis()}").apply { mkdirs() }
+
+      // Create 1,000 files
+      for (i in 1..1000) {
+        java.io.File(massiveDir, "file_%04d.dat".format(i)).writeBytes(ByteArray(16))
+      }
+
+      val startMs = System.currentTimeMillis()
+      val page0 = repo.getFilesPaged(
+        dirPath = massiveDir.absolutePath,
+        page = 0,
+        pageSize = 40,
+        sortOption = com.example.data.model.SortOption.NAME_ASC,
+        showHidden = false
+      )
+      val latencyMs = System.currentTimeMillis() - startMs
+
+      // Only 40 items in page slice
+      assertEquals(40, page0.items.size)
+      assertEquals(1000, page0.totalCount)
+      assertTrue(page0.hasMore)
+      assertEquals("file_0001.dat", page0.items.first().name)
+      assertEquals("file_0040.dat", page0.items.last().name)
+
+      // Page 1
+      val page1 = repo.getFilesPaged(
+        dirPath = massiveDir.absolutePath,
+        page = 1,
+        pageSize = 40,
+        sortOption = com.example.data.model.SortOption.NAME_ASC,
+        showHidden = false
+      )
+      assertEquals(40, page1.items.size)
+      assertEquals("file_0041.dat", page1.items.first().name)
+
+      massiveDir.deleteRecursively()
+    }
+  }
+
+  @Test
+  fun `verify performance monitor metrics update`() {
+    com.example.data.performance.PerformanceMonitor.recordFolderOpen(12L)
+    com.example.data.performance.PerformanceMonitor.recordPagedLoad(8L)
+    com.example.data.performance.PerformanceMonitor.recordStatCacheHit(5)
+
+    val metrics = com.example.data.performance.PerformanceMonitor.metrics.value
+    assertEquals(12L, metrics.lastFolderOpenLatencyMs)
+    assertEquals(8L, metrics.lastPagedLoadLatencyMs)
+    assertTrue(metrics.diskReadsAvoided >= 5)
+  }
+
 }

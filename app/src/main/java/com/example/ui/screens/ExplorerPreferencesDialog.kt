@@ -66,6 +66,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Bolt
+import com.example.ui.components.isAllFilesAccessGranted
+import com.example.ui.components.openAllFilesAccessSettings
+import com.example.ui.components.openAppSettings
 import com.example.data.model.SortOption
 import com.example.data.model.ViewMode
 import com.example.ui.components.formatDate
@@ -78,8 +87,10 @@ fun ExplorerPreferencesDialog(
     viewModel: UnifiedViewModel,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showSortDropdown by remember { mutableStateOf(false) }
+    val isAllFilesGranted = isAllFilesAccessGranted()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -387,6 +398,196 @@ fun ExplorerPreferencesDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(if (uiState.isIndexing) "Indexing..." else "Re-index Local Storage")
+                        }
+                    }
+                }
+
+                // Device Storage & File Management Permission Section
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = if (isAllFilesGranted) {
+                            MaterialTheme.colorScheme.surface
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
+                        }
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isAllFilesGranted) {
+                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                        } else {
+                                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f)
+                                        }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = if (isAllFilesGranted) Icons.Default.Security else Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = if (isAllFilesGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "All Files Access",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isAllFilesGranted) "Granted - Full management active" else "Required to view and manage all files",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isAllFilesGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (isAllFilesGranted) {
+                                "Fossify Files has full access to create, edit, rename, delete, and compress files across your internal and external storage."
+                            } else {
+                                "Android requires special permission for file managers to manage all files across storage. Tap below to enable."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 18.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { openAllFilesAccessSettings(context) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (isAllFilesGranted) "Manage Access" else "Grant Permission")
+                            }
+
+                            OutlinedButton(
+                                onClick = { openAppSettings(context) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("App Info")
+                            }
+                        }
+                    }
+                }
+
+                // Performance & I/O Priority Diagnostics Section
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Performance & I/O Priority",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Interactive priority active • Indexer yields to user",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Folder Open Latency", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        "${uiState.performanceMetrics.lastFolderOpenLatencyMs} ms",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Page Slice Fetch Latency", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        "${uiState.performanceMetrics.lastPagedLoadLatencyMs} ms",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Disk Reads Avoided (Cache)", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        "${uiState.performanceMetrics.diskReadsAvoided} syscalls",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Background Indexer Yields", style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        "${uiState.performanceMetrics.totalIoYields} times",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }

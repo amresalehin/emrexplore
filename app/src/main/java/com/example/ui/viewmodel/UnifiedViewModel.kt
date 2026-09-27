@@ -16,6 +16,11 @@ import com.example.data.model.MediaItem
 import com.example.data.model.SortOption
 import com.example.data.model.StorageStats
 import com.example.data.model.ViewMode
+import com.example.data.model.ConflictResolution
+import com.example.data.model.FileOperationProgress
+import com.example.data.model.OperationStatus
+import com.example.data.performance.PerformanceMetrics
+import com.example.data.performance.PerformanceMonitor
 import com.example.data.repository.FileRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -120,6 +125,10 @@ data class UiState(
     val homeSearchCategoryFilter: CategoryType? = null,
     val isHomeSearching: Boolean = false,
 
+    // Background File Operation
+    val fileOperationProgress: FileOperationProgress = FileOperationProgress(),
+    val performanceMetrics: PerformanceMetrics = PerformanceMetrics(),
+
     // User Feedback
     val userMessage: String? = null
 )
@@ -136,6 +145,23 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private var loadFilesJob: Job? = null
 
     init {
+        // Collect decoupled file operations progress
+        viewModelScope.launch {
+            repository.operationManager.progress.collect { progress ->
+                _uiState.update { it.copy(fileOperationProgress = progress) }
+                if (progress.status == OperationStatus.COMPLETED) {
+                    loadFiles()
+                    loadStorageStats()
+                }
+            }
+        }
+
+        // Collect performance instrumentation metrics
+        viewModelScope.launch {
+            PerformanceMonitor.metrics.collect { metrics ->
+                _uiState.update { it.copy(performanceMetrics = metrics) }
+            }
+        }
         viewModelScope.launch {
             val prefs = repository.getPreferences()
             val initialPath = if (prefs.rememberLastDirectory && prefs.lastDirectoryPath.isNotBlank() && File(prefs.lastDirectoryPath).exists()) {
@@ -331,6 +357,21 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             navigateToDirectory(parent.absolutePath)
             true
         } else false
+    }
+
+    fun onPermissionsGranted() {
+        val root = repository.rootPath
+        val current = _uiState.value.currentPath
+        val filesDir = getApplication<Application>().filesDir.absolutePath
+        val shouldNavigateToRoot = (current == filesDir || !File(current).exists() || !File(current).canRead()) && root != filesDir
+        if (shouldNavigateToRoot) {
+            navigateToDirectory(root)
+        } else {
+            loadFiles()
+        }
+        loadMedia()
+        loadStorageStats()
+        calculateCategoryCounts()
     }
 
     fun loadFiles(path: String = _uiState.value.currentPath) {
@@ -591,25 +632,45 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     fun pasteClipboard() {
         val clip = _uiState.value.clipboard ?: return
         val targetDir = _uiState.value.currentPath
-        viewModelScope.launch {
-            var count = 0
-            for (path in clip.sourcePaths) {
-                val ok = if (clip.action == ClipboardAction.COPY) {
-                    repository.copyFile(path, targetDir)
-                } else {
-                    repository.moveFile(path, targetDir)
-                }
-                if (ok) count++
-            }
-            _uiState.update {
-                it.copy(
-                    clipboard = null,
-                    userMessage = "Pasted $count items"
-                )
-            }
-            loadFiles()
-            loadStorageStats()
+        val actionName = if (clip.action == ClipboardAction.COPY) "Copy" else "Move"
+
+        if (clip.action == ClipboardAction.COPY) {
+            repository.operationManager.startCopy(clip.sourcePaths, targetDir)
+        } else {
+            repository.operationManager.startMove(clip.sourcePaths, targetDir)
         }
+
+        _uiState.update {
+            it.copy(
+                clipboard = null,
+                userMessage = "$actionName operation started in background"
+            )
+        }
+    }
+
+    // File Operation Controls
+    fun pauseFileOperation() {
+        repository.operationManager.pause()
+    }
+
+    fun resumeFileOperation() {
+        repository.operationManager.resume()
+    }
+
+    fun cancelFileOperation() {
+        repository.operationManager.cancel()
+    }
+
+    fun retryFileOperation() {
+        repository.operationManager.retry()
+    }
+
+    fun resolveFileConflict(resolution: ConflictResolution) {
+        repository.operationManager.resolveConflict(resolution)
+    }
+
+    fun dismissFileOperation() {
+        repository.operationManager.dismiss()
     }
 
     // CRUD

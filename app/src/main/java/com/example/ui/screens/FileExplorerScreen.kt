@@ -91,11 +91,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import android.os.Build
+import androidx.compose.material3.Button
+import androidx.compose.ui.text.style.TextAlign
+import com.example.ui.components.isAllFilesAccessGranted
+import com.example.ui.components.openAllFilesAccessSettings
 import com.example.data.model.FileItem
 import com.example.data.model.SortOption
 import com.example.data.model.ViewMode
@@ -418,6 +424,7 @@ fun FileExplorerScreen(
                     CircularProgressIndicator()
                 }
             } else if (displayFiles.isEmpty()) {
+                val needsAllFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !isAllFilesAccessGranted()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -429,21 +436,44 @@ fun FileExplorerScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Folder,
+                            imageVector = if (needsAllFiles) Icons.Default.Storage else Icons.Default.Folder,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            tint = if (needsAllFiles) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                             modifier = Modifier.size(64.dp)
                         )
                         Text(
-                            text = if (uiState.searchQuery.isNotBlank()) "No files match '${uiState.searchQuery}'" else "Folder is empty",
+                            text = if (needsAllFiles) {
+                                "All Files Access Required"
+                            } else if (uiState.searchQuery.isNotBlank()) {
+                                "No files match '${uiState.searchQuery}'"
+                            } else {
+                                "Folder is empty"
+                            },
                             style = MaterialTheme.typography.titleMedium,
+                            fontWeight = if (needsAllFiles) FontWeight.Bold else FontWeight.Normal,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "Tap + to create a new folder or file",
+                            text = if (needsAllFiles) {
+                                "Grant All Files Access permission to browse and manage files across your device storage."
+                            } else {
+                                "Tap + to create a new folder or file"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            textAlign = TextAlign.Center
                         )
+                        if (needsAllFiles) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = { openAllFilesAccessSettings(context) },
+                                modifier = Modifier.testTag("empty_state_grant_all_files_button")
+                            ) {
+                                Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Grant All Files Access")
+                            }
+                        }
                     }
                 }
             } else {
