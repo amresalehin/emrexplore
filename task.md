@@ -1,6 +1,6 @@
 # Performance & Architecture Task Plan
 
-Repository: `amresalehin/fossify-files`
+Repository: `amresalehin/emrexplore`
 Working branch: `ChatGPT`
 
 This file is the actionable task list for the performance work.  
@@ -96,11 +96,11 @@ Goal: Gallery must remain responsive with very large media libraries.
 
 ### Fullscreen Viewer
 
-- [ ] Stop relying on the currently loaded Paging snapshot as the complete viewer dataset.
+- [x] Stop relying on the currently loaded Paging snapshot as the complete viewer dataset.
 - [x] Design and implement a dedicated bounded adjacent-item loader.
-- [ ] Support previous/next across unloaded pages.
-- [x] Add bounded 5-item fullscreen window loading (UI wiring still pending).
-- [ ] Keep fullscreen memory bounded.
+- [x] Support previous/next across unloaded pages.
+- [x] Add bounded 5-item fullscreen window loading and wire it to the viewer UI.
+- [x] Keep fullscreen memory bounded.
 - [ ] Avoid decoding full-resolution images until needed.
 
 ## 4. Thumbnail Pipeline
@@ -275,7 +275,7 @@ The performance architecture is considered ready only when:
 - [ ] Gallery remains usable with 100k+ media items.
 - [ ] Albums do not require a complete media list in memory.
 - [ ] Favorites do not require a complete media list in memory.
-- [ ] Fullscreen navigation works beyond the currently loaded Paging window.
+- [x] Fullscreen navigation works beyond the currently loaded Paging window.
 - [ ] Thumbnail memory and decoding remain bounded.
 - [ ] Background indexing yields to interactive work.
 - [ ] Search is cancellable and does not freeze the UI.
@@ -319,3 +319,60 @@ Implementation note: Favorites now select the Room-backed Paging source through 
 - [x] Ignore local signing keystores and environment files.
 - [ ] Run a full Android Gradle build after the cleanup.
 - [ ] Re-scan the complete Git history for previously committed secrets if repository history exposure is suspected.
+
+
+## 15. Aves-Class Gallery Capability Roadmap
+
+The Gallery is now a media manager, not merely a thumbnail grid. The target is Aves-class capability while retaining this app's MediaStore + Paging performance architecture.
+
+### Gallery foundation
+- [x] Timeline for images + videos
+- [x] Albums with independent Paging
+- [x] Favorites with independent Paging
+- [x] Photos / Videos / All filters
+- [x] Bounded thumbnail loading
+- [x] Bounded fullscreen viewer window
+- [x] Absolute viewer navigation across unloaded pages
+- [ ] Stable multi-selection model for media
+- [ ] Sort/group controls (date, name, size, type)
+- [ ] Rich media categories (Screenshots, Camera, Downloads, GIF, RAW, etc.)
+
+### Aves-style media management
+- [ ] Immersive swipe-first viewer
+- [ ] Video playback controls in viewer
+- [ ] Share / open-with / wallpaper actions
+- [ ] Delete / trash / restore from Gallery
+- [ ] Move / copy / rename from Gallery
+- [ ] Rotate / crop / basic editing actions
+- [ ] Slideshow
+- [ ] Multi-select action bar
+- [ ] Batch share / favorite / move / copy / delete
+
+### Metadata-first media details
+- [x] EXIF / IPTC / XMP parsing infrastructure exists
+- [x] Metadata inspector exists
+- [ ] Integrate metadata inspector directly into Gallery actions
+- [ ] GPS/location display and map entry point
+- [ ] Safe metadata editing from Gallery
+- [ ] Metadata-aware sorting/filtering
+
+### Search and organization
+- [ ] Gallery search by filename
+- [ ] Date/year/month filtering
+- [ ] Location filtering
+- [ ] Metadata/tag filtering
+- [ ] Duplicate/similar-media views
+- [ ] Large files / long videos views
+
+### Intelligence layer (after deterministic Gallery)
+- [ ] OCR
+- [ ] Object tagging
+- [ ] Captioning
+- [ ] People/face grouping
+- [ ] Embeddings / semantic search
+- [ ] AI-derived tags written to metadata where safe
+- [ ] Personal-memory/knowledge layer over enriched media
+
+**Architecture rule:** every new Gallery feature must preserve bounded loading and must not reintroduce a full-library `List<MediaItem>` into the normal browsing path.
+
+Last updated: 2026-09-27
