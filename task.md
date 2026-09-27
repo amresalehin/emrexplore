@@ -333,7 +333,7 @@ The Gallery is now a media manager, not merely a thumbnail grid. The target is A
 - [x] Bounded thumbnail loading
 - [x] Bounded fullscreen viewer window
 - [x] Absolute viewer navigation across unloaded pages
-- [ ] Stable multi-selection model for media
+- [x] Stable multi-selection model for media
 - [ ] Sort/group controls (date, name, size, type)
 - [ ] Rich media categories (Screenshots, Camera, Downloads, GIF, RAW, etc.)
 
@@ -345,8 +345,9 @@ The Gallery is now a media manager, not merely a thumbnail grid. The target is A
 - [ ] Move / copy / rename from Gallery
 - [ ] Rotate / crop / basic editing actions
 - [ ] Slideshow
-- [ ] Multi-select action bar
-- [ ] Batch share / favorite / move / copy / delete
+- [x] Multi-select action bar
+- [x] Batch share / favorite / delete
+- [ ] Batch move / copy
 
 ### Metadata-first media details
 - [x] EXIF / IPTC / XMP parsing infrastructure exists
@@ -376,3 +377,14 @@ The Gallery is now a media manager, not merely a thumbnail grid. The target is A
 **Architecture rule:** every new Gallery feature must preserve bounded loading and must not reintroduce a full-library `List<MediaItem>` into the normal browsing path.
 
 Last updated: 2026-09-27
+
+### Gallery Selection Milestone — 2026-09-28
+- [x] Long-press media to enter selection mode.
+- [x] Tap additional loaded media while selection mode is active.
+- [x] Selected-state overlay and contextual action bar.
+- [x] Batch share using MediaStore content URIs.
+- [x] Batch favorite.
+- [x] Batch delete to existing Recycle Bin flow.
+- [x] Selection state remains bounded to explicitly selected media; no library-wide materialization.
+- [ ] Batch move/copy through FileOperationManager.
+- [ ] Select-all semantics backed by provider queries rather than Paging snapshot.
