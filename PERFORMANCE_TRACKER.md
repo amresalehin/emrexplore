@@ -286,3 +286,28 @@ Remaining:
 - Validate behavior against large libraries on a real device.
 
 This approach keeps fullscreen navigation on the same query/paging architecture while avoiding a full-library in-memory viewer dataset.
+
+
+### Phase 0.2 — Environment and secret cleanup
+Status: **COMPLETE**
+
+Implemented:
+- Removed the Secrets Gradle Plugin from the Android build.
+- Removed the `.env.example` template containing `GEMINI_API_KEY`.
+- Removed Firebase AI, Firebase App Check, and Google Services build integration from the previous AI Studio configuration.
+- Removed the server-side Gemini capability declaration from `metadata.json`.
+- Updated README setup instructions so a local `.env` / API key is no longer required.
+- Added local signing keystore patterns (`*.jks`, `*.keystore`) to `.gitignore`.
+- Release signing remains environment-based through `KEYSTORE_PATH`, `STORE_PASSWORD`, and `KEY_PASSWORD`; these are not stored in the repository.
+
+Verification:
+- `.env.example` is absent on the ChatGPT branch.
+- Secrets Gradle Plugin references are absent.
+- Google Services plugin references are absent.
+- Firebase/Gemini build references are absent.
+- `.env` remains ignored.
+- No API-key value was found in the files audited on the ChatGPT branch.
+
+Important:
+- This is repository/static configuration validation only. A full Android Gradle build has not yet been run in this environment.
+- Removing the AI Studio/Firebase configuration is intentional for the current offline-first architecture. If cloud AI is added later, credentials must be supplied through a secure runtime/backend mechanism rather than committed to the APK or repository.
