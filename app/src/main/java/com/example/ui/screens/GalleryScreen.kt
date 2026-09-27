@@ -276,7 +276,7 @@ private fun PagedMediaGrid(
     ) {
         items(
             count = items.itemCount,
-            key = items.itemKey { it.path },
+            key = items.itemKey { it.uri.toString() },
             contentType = items.itemContentType { if (it.isVideo) "video" else "photo" }
         ) { index ->
             val item = items[index]
@@ -334,7 +334,7 @@ private fun MediaGrid(
     ) {
         items(
             items = items,
-            key = { it.path },
+            key = { it.uri.toString() },
             contentType = { if (it.isVideo) "video" else "photo" }
         ) { item ->
             MediaGridThumbnail(
