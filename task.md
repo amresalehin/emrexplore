@@ -78,12 +78,12 @@ Goal: Gallery must remain responsive with very large media libraries.
 
 ### Albums
 
-- [ ] Remove dependency on the complete `allMediaItems` list.
-- [ ] Build album discovery from MediaStore without loading every media item into memory.
-- [ ] Create an efficient album model.
+- [x] Remove album drill-down dependency on the complete `allMediaItems` list.
+- [x] Build album discovery separately from Gallery media item materialization.
+- [x] Create a dedicated MediaStore album repository.
 - [ ] Load album counts lazily or with provider-side aggregation where practical.
-- [ ] Open an album through a filtered Paging source.
-- [ ] Preserve fast album thumbnails.
+- [x] Open an album through a filtered Paging source.
+- [x] Preserve bounded Paging memory for album contents.
 - [ ] Test devices with hundreds/thousands of albums.
 
 ### Favorites
@@ -256,9 +256,9 @@ These are specifically related to the current Paging implementation.
 - [ ] Verify API <26 query fallback.
 - [ ] Verify `BUCKET_ID` / `BUCKET_DISPLAY_NAME` availability.
 - [ ] Review use of deprecated `DATA` column and reduce path dependency where possible.
-- [ ] Replace path-based Paging keys with a stable URI/type key.
+- [x] Replace path-based Paging keys with stable URI keys.
 - [ ] Replace numeric video-ID offset with a typed/stable key strategy.
-- [ ] Preserve `CancellationException` in PagingSource loads.
+- [x] Preserve `CancellationException` in PagingSource loads.
 - [ ] Verify Paging refresh keys preserve expected scroll position.
 - [ ] Remove unnecessary legacy `loadMedia()` calls from the main timeline.
 - [ ] Confirm album/favorite legacy loading is isolated from timeline browsing.
@@ -288,7 +288,7 @@ The performance architecture is considered ready only when:
 ## Current Priority Queue
 
 1. Compile and validate the current Paging implementation.
-2. Finish Gallery Albums without full-media loading.
+2. Finish album count strategy and device-test album discovery.
 3. Finish Favorites without full-media loading.
 4. Fix fullscreen navigation across unloaded pages.
 5. Audit cancellation and stale-work behavior.
