@@ -1,6 +1,7 @@
 package com.example.data.media
 
-import android.content.Context\nimport android.provider.MediaStore
+import android.content.Context
+import android.provider.MediaStore
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
@@ -47,8 +48,51 @@ class MediaRepository(context: Context) {
      * the UI Paging snapshot. The PagingSource is reused as the canonical query
      * implementation, but only the requested viewer window is materialized.
      */
-    suspend fun viewerPosition(item: com.example.data.model.MediaItem, source: FullscreenMediaSource, albumId: String? = null): Int {\n        if (source == FullscreenMediaSource.FAVORITES) {\n            val dao = com.example.data.local.AppDatabase.getDatabase(appContext).favoriteDao()\n            val timestamp = dao.getFavoriteTimestamp(item.path) ?: return 0
-            return dao.countFavoritesBefore(timestamp, item.path)\n        }\n        val resolver = appContext.contentResolver\n        val rawId = if (item.isVideo) item.id - 1_000_000L else item.id\n        val mediaType = if (item.isVideo) MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO else MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE\n        val typeSelection = when (source) {\n            FullscreenMediaSource.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"\n            FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"\n            FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"\n            FullscreenMediaSource.ALBUM -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"\n            FullscreenMediaSource.FAVORITES -> ""\n        }\n        val args = when (source) {\n            FullscreenMediaSource.ALL, FullscreenMediaSource.ALBUM -> mutableListOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())\n            else -> mutableListOf(mediaType.toString())\n        }\n        var selection = "($typeSelection) AND (" + MediaStore.Files.FileColumns.DATE_ADDED + " > ? OR (" + MediaStore.Files.FileColumns.DATE_ADDED + " = ? AND " + MediaStore.Files.FileColumns._ID + " > ?))"\n        val dateSeconds = item.dateAdded / 1000L\n        args += listOf(dateSeconds.toString(), dateSeconds.toString(), rawId.toString())\n        if (source == FullscreenMediaSource.ALBUM) {\n            selection += " AND " + MediaStore.Files.FileColumns.BUCKET_ID + " = ?"\n            args += requireNotNull(albumId)\n        }\n        val projection = arrayOf(MediaStore.Files.FileColumns._ID)\n        return resolver.query(MediaStore.Files.getContentUri("external"), projection, selection, args.toTypedArray(), null)?.use { it.count } ?: 0\n    }\n\n    suspend fun viewerTotalCount(source: FullscreenMediaSource, albumId: String? = null): Int {\n        if (source == FullscreenMediaSource.FAVORITES) return com.example.data.local.AppDatabase.getDatabase(appContext).favoriteDao().getFavoriteCount()\n        val resolver = appContext.contentResolver\n        val (selection, args) = when (source) {\n            FullscreenMediaSource.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())\n            FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())\n            FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())\n            FullscreenMediaSource.ALBUM -> (MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " + MediaStore.Files.FileColumns.BUCKET_ID + " = ?") to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(), requireNotNull(albumId))\n            FullscreenMediaSource.FAVORITES -> "1=0" to emptyArray()\n        }\n        return resolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns._ID), selection, args, null)?.use { it.count } ?: 0\n    }\n\n    suspend fun loadViewerWindow(
+    suspend fun viewerPosition(item: com.example.data.model.MediaItem, source: FullscreenMediaSource, albumId: String? = null): Int {
+        if (source == FullscreenMediaSource.FAVORITES) {
+            val dao = com.example.data.local.AppDatabase.getDatabase(appContext).favoriteDao()
+            val timestamp = dao.getFavoriteTimestamp(item.path) ?: return 0
+            return dao.countFavoritesBefore(timestamp, item.path)
+        }
+        val resolver = appContext.contentResolver
+        val rawId = if (item.isVideo) item.id - 1_000_000L else item.id
+        val mediaType = if (item.isVideo) MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO else MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
+        val typeSelection = when (source) {
+            FullscreenMediaSource.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+            FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
+            FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
+            FullscreenMediaSource.ALBUM -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+            FullscreenMediaSource.FAVORITES -> ""
+        }
+        val args = when (source) {
+            FullscreenMediaSource.ALL, FullscreenMediaSource.ALBUM -> mutableListOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+            else -> mutableListOf(mediaType.toString())
+        }
+        var selection = "($typeSelection) AND (" + MediaStore.Files.FileColumns.DATE_ADDED + " > ? OR (" + MediaStore.Files.FileColumns.DATE_ADDED + " = ? AND " + MediaStore.Files.FileColumns._ID + " > ?))"
+        val dateSeconds = item.dateAdded / 1000L
+        args += listOf(dateSeconds.toString(), dateSeconds.toString(), rawId.toString())
+        if (source == FullscreenMediaSource.ALBUM) {
+            selection += " AND " + MediaStore.Files.FileColumns.BUCKET_ID + " = ?"
+            args += requireNotNull(albumId)
+        }
+        val projection = arrayOf(MediaStore.Files.FileColumns._ID)
+        return resolver.query(MediaStore.Files.getContentUri("external"), projection, selection, args.toTypedArray(), null)?.use { it.count } ?: 0
+    }
+
+    suspend fun viewerTotalCount(source: FullscreenMediaSource, albumId: String? = null): Int {
+        if (source == FullscreenMediaSource.FAVORITES) return com.example.data.local.AppDatabase.getDatabase(appContext).favoriteDao().getFavoriteCount()
+        val resolver = appContext.contentResolver
+        val (selection, args) = when (source) {
+            FullscreenMediaSource.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+            FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())
+            FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+            FullscreenMediaSource.ALBUM -> (MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " + MediaStore.Files.FileColumns.BUCKET_ID + " = ?") to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(), requireNotNull(albumId))
+            FullscreenMediaSource.FAVORITES -> "1=0" to emptyArray()
+        }
+        return resolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns._ID), selection, args, null)?.use { it.count } ?: 0
+    }
+
+    suspend fun loadViewerWindow(
         source: FullscreenMediaSource,
         centerIndex: Int,
         radius: Int = 2,
