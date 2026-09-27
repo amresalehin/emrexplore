@@ -16,6 +16,7 @@ class MediaRepository(context: Context) {
                 pageSize = MediaStorePagingSource.MAX_PAGE_SIZE,
                 initialLoadSize = MediaStorePagingSource.MAX_PAGE_SIZE,
                 prefetchDistance = 30,
+                maxSize = MediaStorePagingSource.MAX_PAGE_SIZE * 3,
                 enablePlaceholders = false
             ),
             pagingSourceFactory = {
