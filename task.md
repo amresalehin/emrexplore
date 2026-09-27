@@ -260,8 +260,8 @@ These are specifically related to the current Paging implementation.
 - [ ] Replace numeric video-ID offset with a typed/stable key strategy.
 - [x] Preserve `CancellationException` in PagingSource loads.
 - [ ] Verify Paging refresh keys preserve expected scroll position.
-- [ ] Remove unnecessary legacy `loadMedia()` calls from the main timeline.
-- [ ] Confirm album/favorite legacy loading is isolated from timeline browsing.
+- [x] Remove unnecessary legacy `loadMedia()` calls from Gallery/file-operation paths.
+- [x] Confirm album/favorite legacy loading is isolated from timeline browsing.
 
 ## 14. Definition of Done
 
@@ -299,5 +299,7 @@ The performance architecture is considered ready only when:
 10. Complete memory/I/O stress testing.
 
 Last updated: 2026-09-27
+
+Static validation pass: removed all normal runtime calls to the legacy full-library `loadMedia()` path; Gallery browsing now relies on Paging/album discovery.
 
 Implementation note: Favorites now select the Room-backed Paging source through the same `galleryPagingFlow`, so the normal timeline source is not collected in parallel. Album refresh is also isolated from legacy full-library loading.
