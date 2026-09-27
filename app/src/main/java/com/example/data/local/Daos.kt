@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FavoriteDao {
-    @Query("SELECT * FROM favorites ORDER BY timestamp DESC")
+    @Query("SELECT * FROM favorites ORDER BY timestamp DESC, path ASC")
     fun getAllFavorites(): Flow<List<FavoriteEntity>>
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
@@ -20,8 +20,14 @@ interface FavoriteDao {
     @Query("SELECT path FROM favorites")
     suspend fun getAllFavoritePathsSync(): List<String>
 
-    @Query("SELECT path FROM favorites ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    @Query("SELECT path FROM favorites ORDER BY timestamp DESC, path ASC LIMIT :limit OFFSET :offset")
     suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE timestamp > :timestamp OR (timestamp = :timestamp AND path < :path)")
+    suspend fun countFavoritesBefore(timestamp: Long, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites")
+    suspend fun getFavoriteCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
