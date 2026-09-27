@@ -52,6 +52,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.paging.LoadState
@@ -87,6 +89,7 @@ fun GalleryScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
     var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
@@ -152,7 +155,9 @@ fun GalleryScreen(
 
                         IconButton(onClick = {
                             if (uiState.gallerySubTab == GallerySubTab.ALBUMS) {
-                                discoveredAlbums = MediaAlbumRepository(context).getAlbums()
+                                scope.launch {
+                            discoveredAlbums = MediaAlbumRepository(context).getAlbums()
+                        }
                             } else {
                                 pagedMedia.refresh()
                             }
