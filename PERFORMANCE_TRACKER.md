@@ -148,6 +148,19 @@ Requirements:
 - thumbnail requests sized to rendered cells
 - cancellation of obsolete loads
 
+### Phase 3.1 — Gallery Paging source cleanup
+Status: **IN PROGRESS**
+
+Completed in this pass:
+- Favorites now switch the shared `galleryPagingFlow` to `FavoriteMediaPagingSource` instead of creating a second always-collected Paging stream.
+- The normal MediaStore Paging source is no longer collected while Favorites is active.
+- Album refresh no longer calls the legacy full-library `loadMedia()` path.
+- Album refresh is executed from a Compose coroutine scope so the suspend repository call is lifecycle-aware.
+
+Still blocked on validation:
+- Full Android Gradle compile has not been run in this environment.
+- Real-device MediaStore/Paging behavior remains unverified.
+
 ### Phase 4 — Thumbnail pipeline
 Status: **PARTIALLY COMPLETE**
 
@@ -246,3 +259,5 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | 0f23717 | Favorite repository paging | Bounded favorite Paging configuration |
 | 2026-09-27 | c801470 | Remove legacy favorite load | Favorites no longer trigger full MediaStore materialization |
 | 2026-09-27 | 1e29848 | Favorite UI migration | Favorites grid now uses Paging |
+| 2026-09-27 | 821c97a | Remove duplicate favorite Paging collection | Shared gallery Paging flow now selects Favorites directly |
+| 2026-09-27 | d22c50e | Fix album refresh coroutine | Album refresh no longer calls suspend repository from click handler |
