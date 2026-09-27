@@ -813,7 +813,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             "ALL" -> galleryFilterFlow.value = MediaFilter.ALL
             "PHOTOS" -> galleryFilterFlow.value = MediaFilter.PHOTOS
             "VIDEOS" -> galleryFilterFlow.value = MediaFilter.VIDEOS
-            "FAVORITES" -> loadMedia(forceRefresh = true)
+            "FAVORITES" -> refreshGallery()
         }
     }
 
