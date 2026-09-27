@@ -117,7 +117,8 @@ Implemented in this iteration:
 Known temporary limitations:
 - Album discovery now uses a separate metadata-only repository on Android 11+ with MediaStore grouped query arguments; album item counts are intentionally deferred (`-1`) and need a follow-up count strategy.
 - Android 10 and earlier use a compatibility album scan because bucket columns were introduced in API 29.
-- Favorites still use the legacy full-media path and must be migrated to a dedicated favorites PagingSource.
+- Favorites now use a Room-backed path page plus batched MediaStore lookup through `FavoriteMediaPagingSource`.
+- Favorites still need device validation and a more direct invalidation strategy if favorite ordering changes without a list-state update.
 - Fullscreen navigation currently uses the loaded Paging snapshot rather than a dedicated adjacent-item loader.
 - The new source has not yet been device-tested in this environment.
 - The current branch has not been verified with a full Android Gradle build in this environment.
@@ -240,3 +241,8 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | 94b9a92 | Album Paging repository | MediaRepository exposes bounded album paging |
 | 2026-09-27 | 6e98b69 | Album UI migration | Album drill-down uses Paging instead of allMediaItems |
 | 2026-09-27 | 368eb75 | Album UI safety fixes | Stable selected-album state and unknown-count rendering |
+| 2026-09-27 | 374f82c | Paged favorite paths | Room exposes bounded favorite path pages |
+| 2026-09-27 | dc0a88e | Favorite PagingSource | Only favorite paths are resolved through MediaStore |
+| 2026-09-27 | 0f23717 | Favorite repository paging | Bounded favorite Paging configuration |
+| 2026-09-27 | c801470 | Remove legacy favorite load | Favorites no longer trigger full MediaStore materialization |
+| 2026-09-27 | 1e29848 | Favorite UI migration | Favorites grid now uses Paging |
