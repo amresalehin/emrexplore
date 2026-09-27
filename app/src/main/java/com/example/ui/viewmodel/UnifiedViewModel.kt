@@ -85,6 +85,7 @@ data class UiState(
     // Gallery
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
     val galleryFilter: String = "ALL", // ALL, PHOTOS, VIDEOS, FAVORITES
+    val allMediaItems: List<MediaItem> = emptyList(),
     val mediaItems: List<MediaItem> = emptyList(),
     val mediaAlbums: List<MediaAlbum> = emptyList(),
     val selectedAlbum: MediaAlbum? = null,
@@ -247,7 +248,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             }
             MainTab.GALLERY -> {
                 // Lazy load media when Gallery tab is opened
-                if (_uiState.value.mediaItems.isEmpty()) {
+                if (_uiState.value.allMediaItems.isEmpty()) {
                     loadMedia()
                 }
             }
@@ -280,23 +281,30 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val cached = repository.getCachedFiles(path, _uiState.value.showHidden)
             if (!cached.isNullOrEmpty()) {
                 val sorted = sortFiles(cached, _uiState.value.sortOption)
-                val initialPage = sorted.take(40)
+                val initialItems = if (sorted.size <= 300) sorted else sorted.take(120)
+                val hasMore = sorted.size > initialItems.size
                 _uiState.update {
                     it.copy(
-                        files = initialPage,
+                        files = initialItems,
                         currentPage = 0,
                         totalFilesInFolder = sorted.size,
-                        hasMorePages = sorted.size > initialPage.size,
+                        hasMorePages = hasMore,
                         isLoadingFiles = false
                     )
                 }
+                if (!hasMore) {
+                    if (_uiState.value.explorerPreferences.rememberLastDirectory) {
+                        repository.updateLastPath(path)
+                    }
+                    return@launch
+                }
             }
 
-            // STEP 2: Fetch Page 0 lazily via repository.getFilesPaged (pageSize = 40)
+            // STEP 2: Fetch Page 0 lazily via repository.getFilesPaged (pageSize = 120)
             val pagedResult = repository.getFilesPaged(
                 dirPath = path,
                 page = 0,
-                pageSize = 40,
+                pageSize = 120,
                 sortOption = _uiState.value.sortOption,
                 showHidden = _uiState.value.showHidden
             )
@@ -328,7 +336,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val result = repository.getFilesPaged(
                 dirPath = state.currentPath,
                 page = nextPage,
-                pageSize = 40,
+                pageSize = 120,
                 sortOption = state.sortOption,
                 showHidden = state.showHidden
             )
@@ -384,7 +392,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val result = repository.getFilesPaged(
                 dirPath = path,
                 page = 0,
-                pageSize = 40,
+                pageSize = 120,
                 sortOption = _uiState.value.sortOption,
                 showHidden = _uiState.value.showHidden
             )
@@ -705,7 +713,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage("Renamed to '$newName'")
                 loadFiles()
-                loadMedia()
+                loadMedia(forceRefresh = true)
             } else {
                 showMessage("Failed to rename file")
             }
@@ -718,7 +726,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage(if (toTrash) "Moved to Recycle Bin" else "Permanently deleted")
                 loadFiles()
-                loadMedia()
+                loadMedia(forceRefresh = true)
                 loadStorageStats()
             } else {
                 showMessage("Delete failed")
@@ -736,7 +744,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             clearSelection()
             showMessage(if (toTrash) "Moved $count items to Recycle Bin" else "Deleted $count items")
             loadFiles()
-            loadMedia()
+            loadMedia(forceRefresh = true)
             loadStorageStats()
         }
     }
@@ -766,9 +774,30 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(gallerySubTab = subTab) }
     }
 
+    private fun filterMediaList(list: List<MediaItem>, filter: String): List<MediaItem> {
+        return when (filter) {
+            "PHOTOS" -> list.filter { !it.isVideo }
+            "VIDEOS" -> list.filter { it.isVideo }
+            "FAVORITES" -> list.filter { it.isFavorite }
+            else -> list
+        }
+    }
+
     fun setGalleryFilter(filter: String) {
-        _uiState.update { it.copy(galleryFilter = filter) }
-        loadMedia()
+        val allMedia = _uiState.value.allMediaItems
+        if (allMedia.isNotEmpty()) {
+            // Instantaneous 0ms switch without triggering network or disk queries
+            val filtered = filterMediaList(allMedia, filter)
+            _uiState.update {
+                it.copy(
+                    galleryFilter = filter,
+                    mediaItems = filtered
+                )
+            }
+        } else {
+            _uiState.update { it.copy(galleryFilter = filter) }
+            loadMedia()
+        }
     }
 
     fun selectAlbum(album: MediaAlbum?) {
@@ -783,14 +812,20 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun loadMedia() {
+    fun loadMedia(forceRefresh: Boolean = false) {
+        if (!forceRefresh && _uiState.value.allMediaItems.isNotEmpty()) {
+            return
+        }
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingMedia = true) }
-            val items = repository.getMediaItems(_uiState.value.galleryFilter)
-            val albums = repository.getMediaAlbums()
+            if (_uiState.value.allMediaItems.isEmpty()) {
+                _uiState.update { it.copy(isLoadingMedia = true) }
+            }
+            val (allMedia, albums) = repository.getAllMediaData()
+            val filtered = filterMediaList(allMedia, _uiState.value.galleryFilter)
             _uiState.update {
                 it.copy(
-                    mediaItems = items,
+                    allMediaItems = allMedia,
+                    mediaItems = filtered,
                     mediaAlbums = albums,
                     isLoadingMedia = false
                 )
@@ -1056,8 +1091,23 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             val isNowFav = repository.toggleFavorite(fileItem)
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
+
+            // Instantly update cached media in memory
+            val updatedAllMedia = _uiState.value.allMediaItems.map { media ->
+                if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+            }
+            val filtered = filterMediaList(updatedAllMedia, _uiState.value.galleryFilter)
+            val updatedFsList = _uiState.value.fullscreenMediaList.map { media ->
+                if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+            }
+            _uiState.update {
+                it.copy(
+                    allMediaItems = updatedAllMedia,
+                    mediaItems = filtered,
+                    fullscreenMediaList = updatedFsList
+                )
+            }
             loadFiles()
-            loadMedia()
         }
     }
 
@@ -1068,7 +1118,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage("Restored ${trashEntity.name}")
                 loadFiles()
-                loadMedia()
+                loadMedia(forceRefresh = true)
                 loadStorageStats()
             } else {
                 showMessage("Could not restore ${trashEntity.name}")

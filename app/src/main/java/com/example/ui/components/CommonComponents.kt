@@ -355,7 +355,8 @@ fun FileTypeIconBadge(
             ImageRequest.Builder(context)
                 .data(item.uri)
                 .size(128, 128)
-                .crossfade(true)
+                .crossfade(false)
+                .allowHardware(true)
                 .build()
         }
         Box(

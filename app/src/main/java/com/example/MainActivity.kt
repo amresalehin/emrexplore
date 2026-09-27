@@ -74,11 +74,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Configure Coil ImageLoader for high-performance lazy loading
+        // Configure Coil ImageLoader for high-performance lazy loading without scroll stutter
         val imageLoader = coil.ImageLoader.Builder(this)
+            .components {
+                add(coil.decode.VideoFrameDecoder.Factory())
+            }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                    .maxSizePercent(0.30)
                     .build()
             }
             .diskCache {
@@ -87,7 +90,9 @@ class MainActivity : ComponentActivity() {
                     .maxSizePercent(0.05)
                     .build()
             }
-            .crossfade(true)
+            .crossfade(false)
+            .allowHardware(true)
+            .respectCacheHeaders(false)
             .build()
         coil.Coil.setImageLoader(imageLoader)
 

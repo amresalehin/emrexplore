@@ -648,7 +648,7 @@ class FileRepository(private val context: Context) {
     suspend fun getFilesPaged(
         dirPath: String,
         page: Int,
-        pageSize: Int = 40,
+        pageSize: Int = 120,
         sortOption: SortOption = SortOption.NAME_ASC,
         showHidden: Boolean = false
     ): PagedDirectoryResult = IoPriorityCoordinator.withInteractivePriority {
@@ -665,8 +665,16 @@ class FileRepository(private val context: Context) {
                 PerformanceMonitor.recordFolderCacheHit()
                 val filtered = if (showHidden) cached else cached.filter { !it.name.startsWith(".") }
                 val sorted = sortFileList(filtered, sortOption)
-                val offset = page * pageSize
-                val pagedItems = if (offset >= sorted.size) emptyList() else sorted.subList(offset, minOf(offset + pageSize, sorted.size))
+                val pagedItems: List<FileItem>
+                val hasMore: Boolean
+                if (sorted.size <= 300) {
+                    pagedItems = sorted
+                    hasMore = false
+                } else {
+                    val offset = page * pageSize
+                    pagedItems = if (offset >= sorted.size) emptyList() else sorted.subList(offset, minOf(offset + pageSize, sorted.size))
+                    hasMore = (offset + pageSize) < sorted.size
+                }
                 val elapsed = System.currentTimeMillis() - startTimeMs
                 if (page == 0) PerformanceMonitor.recordFolderOpen(elapsed)
                 PerformanceMonitor.recordPagedLoad(elapsed)
@@ -675,7 +683,7 @@ class FileRepository(private val context: Context) {
                     totalCount = sorted.size,
                     page = page,
                     pageSize = pageSize,
-                    hasMore = (offset + pageSize) < sorted.size
+                    hasMore = hasMore
                 )
             }
 
@@ -720,10 +728,6 @@ class FileRepository(private val context: Context) {
             }
 
             // 3. Lazy direct filesystem paging
-            // Audit: File.list() returns an Array<String> from kernel dirents without calling stat().
-            // Expensive filesystem stat() calls (length, lastModified, isDirectory) are strictly deferred
-            // and executed ONLY on the visible slice of files (offset .. offset + pageSize).
-            // Files in 1,000, 10,000, 50,000+ file folders outside this slice are never statted.
             val rawNames = dir.list() ?: return@withContext PagedDirectoryResult(emptyList(), 0, page, pageSize, false)
             val validNames = rawNames.filter { showHidden || !it.startsWith(".") }
             val totalCount = validNames.size
@@ -743,6 +747,7 @@ class FileRepository(private val context: Context) {
             val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
 
             val pageItems = ArrayList<FileItem>(pageNames.size)
+            var statCacheHitsBatch = 0
 
             for (name in pageNames) {
                 val file = File(dir, name)
@@ -756,7 +761,7 @@ class FileRepository(private val context: Context) {
                 val childCount: Int
 
                 if (cachedStat != null && (System.currentTimeMillis() - cachedStat.timestamp) < 60_000L) {
-                    PerformanceMonitor.recordStatCacheHit(avoidedReads = 3)
+                    statCacheHitsBatch++
                     isDir = cachedStat.isDirectory
                     ext = cachedStat.extension
                     mime = cachedStat.mimeType
@@ -800,6 +805,10 @@ class FileRepository(private val context: Context) {
                     uri = Uri.fromFile(file)
                 )
                 pageItems.add(item)
+            }
+
+            if (statCacheHitsBatch > 0) {
+                PerformanceMonitor.recordStatCacheHit(avoidedReads = statCacheHitsBatch * 3)
             }
 
             val sortedPageItems = sortFileList(pageItems, sortOption)
@@ -1175,11 +1184,11 @@ class FileRepository(private val context: Context) {
         }
     }
 
-    suspend fun getMediaAlbums(): List<MediaAlbum> = withContext(Dispatchers.IO) {
+    suspend fun getAllMediaData(): Pair<List<MediaItem>, List<MediaAlbum>> = withContext(Dispatchers.IO) {
         val allMedia = getMediaItems("ALL")
         val groups = allMedia.groupBy { it.bucketName }
 
-        groups.map { (bucketName, items) ->
+        val albums = groups.map { (bucketName, items) ->
             val first = items.firstOrNull()
             MediaAlbum(
                 id = first?.bucketId ?: bucketName,
@@ -1189,6 +1198,11 @@ class FileRepository(private val context: Context) {
                 itemCount = items.size
             )
         }.sortedByDescending { it.itemCount }
+        Pair(allMedia, albums)
+    }
+
+    suspend fun getMediaAlbums(): List<MediaAlbum> = withContext(Dispatchers.IO) {
+        getAllMediaData().second
     }
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {

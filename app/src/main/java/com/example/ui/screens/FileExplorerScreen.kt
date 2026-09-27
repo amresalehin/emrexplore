@@ -350,7 +350,7 @@ fun FileExplorerScreen(
                         )
 
                         // Paging / item count status banner
-                        if (uiState.totalFilesInFolder > 40 && uiState.searchQuery.isBlank()) {
+                        if (uiState.hasMorePages && uiState.searchQuery.isBlank()) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -359,17 +359,15 @@ fun FileExplorerScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = if (uiState.hasMorePages) "Loaded ${uiState.files.size} of ${uiState.totalFilesInFolder} items" else "${uiState.files.size} items",
+                                    text = "Loaded ${uiState.files.size} of ${uiState.totalFilesInFolder} items",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (uiState.hasMorePages) {
-                                    Text(
-                                        text = "Scroll for more",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
+                                Text(
+                                    text = "Scroll for more",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
 
@@ -495,7 +493,7 @@ fun FileExplorerScreen(
                         snapshotFlow {
                             val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                             val total = gridState.layoutInfo.totalItemsCount
-                            last >= total - 8
+                            last >= total - 18
                         }.collect { nearEnd ->
                             if (nearEnd && uiState.hasMorePages && !uiState.isLoadingNextPage && uiState.searchQuery.isBlank()) {
                                 viewModel.loadNextPage()
@@ -511,7 +509,11 @@ fun FileExplorerScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(displayFiles, key = { it.path }) { item ->
+                        items(
+                            items = displayFiles,
+                            key = { it.path },
+                            contentType = { if (it.isDirectory) "folder" else "file" }
+                        ) { item ->
                             val isSelected = uiState.selectedPaths.contains(item.path)
                             FileGridCard(
                                 item = item,
@@ -542,24 +544,14 @@ fun FileExplorerScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
+                                        .padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Loading more (${displayFiles.size} of ${uiState.totalFilesInFolder})...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
@@ -571,7 +563,7 @@ fun FileExplorerScreen(
                         snapshotFlow {
                             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
                             val total = listState.layoutInfo.totalItemsCount
-                            last >= total - 6
+                            last >= total - 15
                         }.collect { nearEnd ->
                             if (nearEnd && uiState.hasMorePages && !uiState.isLoadingNextPage && uiState.searchQuery.isBlank()) {
                                 viewModel.loadNextPage()
@@ -585,7 +577,11 @@ fun FileExplorerScreen(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        items(displayFiles, key = { it.path }) { item ->
+                        items(
+                            items = displayFiles,
+                            key = { it.path },
+                            contentType = { if (it.isDirectory) "folder" else "file" }
+                        ) { item ->
                             val isSelected = uiState.selectedPaths.contains(item.path)
 
                             FileListItem(
@@ -619,24 +615,14 @@ fun FileExplorerScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
+                                        .padding(8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Loading more (${displayFiles.size} of ${uiState.totalFilesInFolder})...",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
@@ -1087,8 +1073,9 @@ private fun FileGridCard(
                     val thumbRequest = remember(item.uri) {
                         ImageRequest.Builder(context)
                             .data(item.uri)
-                            .size(220, 220)
-                            .crossfade(true)
+                            .size(200, 200)
+                            .crossfade(false)
+                            .allowHardware(true)
                             .build()
                     }
                     AsyncImage(

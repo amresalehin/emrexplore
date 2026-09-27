@@ -367,22 +367,6 @@ fun HomeScreen(
                 }
             } else {
                 val categoryListState = rememberLazyListState()
-                var categoryDisplayLimit by remember(filteredCategoryFiles) { mutableIntStateOf(minOf(50, filteredCategoryFiles.size)) }
-
-                LaunchedEffect(categoryListState, filteredCategoryFiles.size) {
-                    snapshotFlow {
-                        val last = categoryListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                        val total = categoryListState.layoutInfo.totalItemsCount
-                        last >= total - 10
-                    }.collect { nearEnd ->
-                        if (nearEnd && categoryDisplayLimit < filteredCategoryFiles.size) {
-                            categoryDisplayLimit = minOf(categoryDisplayLimit + 40, filteredCategoryFiles.size)
-                        }
-                    }
-                }
-                val visibleCategoryFiles = remember(filteredCategoryFiles, categoryDisplayLimit) {
-                    filteredCategoryFiles.take(categoryDisplayLimit)
-                }
 
                 LazyColumn(
                     state = categoryListState,
@@ -390,7 +374,11 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(visibleCategoryFiles, key = { it.path }) { item ->
+                    items(
+                        items = filteredCategoryFiles,
+                        key = { it.path },
+                        contentType = { if (it.isDirectory) "folder" else "file" }
+                    ) { item ->
                         CategoryFileCard(
                             item = item,
                             onClick = { viewModel.openFile(item) }
@@ -452,22 +440,6 @@ fun HomeScreen(
                     }
                 } else {
                     val searchListState = rememberLazyListState()
-                    var searchDisplayLimit by remember(uiState.homeSearchResults) { mutableIntStateOf(minOf(30, uiState.homeSearchResults.size)) }
-
-                    LaunchedEffect(searchListState, uiState.homeSearchResults.size) {
-                        snapshotFlow {
-                            val last = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            val total = searchListState.layoutInfo.totalItemsCount
-                            last >= total - 6
-                        }.collect { nearEnd ->
-                            if (nearEnd && searchDisplayLimit < uiState.homeSearchResults.size) {
-                                searchDisplayLimit = minOf(searchDisplayLimit + 30, uiState.homeSearchResults.size)
-                            }
-                        }
-                    }
-                    val visibleSearchResults = remember(uiState.homeSearchResults, searchDisplayLimit) {
-                        uiState.homeSearchResults.take(searchDisplayLimit)
-                    }
 
                     LazyColumn(
                         state = searchListState,
@@ -475,7 +447,7 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
-                        item {
+                        item(key = "search_results_header", contentType = "header") {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -495,7 +467,11 @@ fun HomeScreen(
                             }
                         }
 
-                        items(visibleSearchResults, key = { it.path }) { item ->
+                        items(
+                            items = uiState.homeSearchResults,
+                            key = { it.path },
+                            contentType = { if (it.isDirectory) "folder" else "file" }
+                        ) { item ->
                             SearchResultCard(
                                 item = item,
                                 onClick = {

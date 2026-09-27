@@ -125,7 +125,7 @@ fun GalleryScreen(
                             Icon(Icons.Default.ViewColumn, contentDescription = "Grid Columns")
                         }
 
-                        IconButton(onClick = { viewModel.loadMedia() }) {
+                        IconButton(onClick = { viewModel.loadMedia(forceRefresh = true) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
@@ -198,7 +198,7 @@ fun GalleryScreen(
             }
         } else if (uiState.selectedAlbum != null) {
             // Display media inside selected album
-            val albumMedia = uiState.mediaItems.filter { it.bucketName == uiState.selectedAlbum.name }
+            val albumMedia = uiState.allMediaItems.filter { it.bucketName == uiState.selectedAlbum.name }
             if (albumMedia.isEmpty()) {
                 EmptyGalleryMessage("No media found in this album")
             } else {
@@ -243,22 +243,6 @@ private fun MediaGrid(
     onItemClick: (MediaItem) -> Unit
 ) {
     val gridState = rememberLazyGridState()
-    var displayLimit by remember(items) { mutableIntStateOf(minOf(60, items.size)) }
-
-    // Lazy load next batch as user scrolls near bottom
-    LaunchedEffect(gridState, items.size) {
-        snapshotFlow {
-            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            val total = gridState.layoutInfo.totalItemsCount
-            lastVisible >= total - 12
-        }.collect { nearEnd ->
-            if (nearEnd && displayLimit < items.size) {
-                displayLimit = minOf(displayLimit + 48, items.size)
-            }
-        }
-    }
-
-    val visibleItems = remember(items, displayLimit) { items.take(displayLimit) }
 
     LazyVerticalGrid(
         state = gridState,
@@ -268,7 +252,11 @@ private fun MediaGrid(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(visibleItems, key = { it.path }) { item ->
+        items(
+            items = items,
+            key = { it.path },
+            contentType = { if (it.isVideo) "video" else "photo" }
+        ) { item ->
             MediaGridThumbnail(
                 item = item,
                 onClick = { onItemClick(item) }
@@ -287,7 +275,8 @@ private fun MediaGridThumbnail(
         ImageRequest.Builder(context)
             .data(item.uri)
             .size(280, 280)
-            .crossfade(true)
+            .crossfade(false)
+            .allowHardware(true)
             .build()
     }
 
@@ -369,7 +358,11 @@ private fun AlbumsGrid(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(albums, key = { it.name }) { album ->
+        items(
+            items = albums,
+            key = { it.name },
+            contentType = { "album" }
+        ) { album ->
             AlbumCard(album = album, onClick = { onAlbumClick(album) })
         }
     }
@@ -397,8 +390,17 @@ private fun AlbumCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (album.coverUri != null) {
+                    val context = LocalContext.current
+                    val coverRequest = remember(album.coverUri) {
+                        ImageRequest.Builder(context)
+                            .data(album.coverUri)
+                            .size(320, 320)
+                            .crossfade(false)
+                            .allowHardware(true)
+                            .build()
+                    }
                     AsyncImage(
-                        model = album.coverUri,
+                        model = coverRequest,
                         contentDescription = album.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
