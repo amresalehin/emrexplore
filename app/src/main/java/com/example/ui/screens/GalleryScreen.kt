@@ -87,6 +87,7 @@ fun GalleryScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
     var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
 
@@ -96,9 +97,9 @@ fun GalleryScreen(
         }
     }
 
-    val albumPagedMedia = if (uiState.selectedAlbum != null) {
-        val albumFlow = remember(uiState.selectedAlbum.id) {
-            MediaRepository(context).albumPager(uiState.selectedAlbum.id)
+    val albumPagedMedia = if (selectedAlbumId != null) {
+        val albumFlow = remember(selectedAlbumId) {
+            MediaRepository(context).albumPager(selectedAlbumId)
         }
         albumFlow.collectAsLazyPagingItems()
     } else null
