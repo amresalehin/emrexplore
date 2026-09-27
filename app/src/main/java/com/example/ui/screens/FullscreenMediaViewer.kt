@@ -81,6 +81,8 @@ import com.example.ui.components.formatFileSize
 fun FullscreenMediaViewer(
     mediaList: List<MediaItem>,
     currentIndex: Int,
+    windowStartIndex: Int = 0,
+    totalCount: Int = mediaList.size,
     onClose: () -> Unit,
     onIndexChange: (Int) -> Unit,
     onToggleFavorite: (FileItem) -> Unit,
@@ -89,7 +91,8 @@ fun FullscreenMediaViewer(
     BackHandler { onClose() }
 
     val context = LocalContext.current
-    val currentItem = mediaList.getOrNull(currentIndex) ?: return
+    val localIndex = (currentIndex - windowStartIndex).coerceIn(0, (mediaList.size - 1).coerceAtLeast(0))
+    val currentItem = mediaList.getOrNull(localIndex) ?: return
     var showControls by remember { mutableStateOf(true) }
     var showInfoSheet by remember { mutableStateOf(false) }
     var rotationDegrees by remember { mutableFloatStateOf(0f) }
@@ -109,8 +112,8 @@ fun FullscreenMediaViewer(
 
     val filmstripState = rememberLazyListState()
     LaunchedEffect(currentIndex) {
-        if (currentIndex in mediaList.indices) {
-            filmstripState.animateScrollToItem(currentIndex)
+        if (localIndex in mediaList.indices) {
+            filmstripState.animateScrollToItem(localIndex)
         }
     }
 
@@ -192,7 +195,7 @@ fun FullscreenMediaViewer(
                 }
             }
 
-            if (currentIndex < mediaList.lastIndex) {
+            if (currentIndex < totalCount - 1) {
                 IconButton(
                     onClick = { onIndexChange(currentIndex + 1) },
                     modifier = Modifier
@@ -248,7 +251,7 @@ fun FullscreenMediaViewer(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "${currentIndex + 1} of ${mediaList.size}",
+                            text = "${currentIndex + 1} of $totalCount",
                             color = Color.LightGray,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -355,7 +358,7 @@ fun FullscreenMediaViewer(
                                     color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                     shape = RoundedCornerShape(8.dp)
                                 )
-                                .clickable { onIndexChange(idx) }
+                                .clickable { onIndexChange(windowStartIndex + idx) }
                         ) {
                             AsyncImage(
                                 model = item.uri,
