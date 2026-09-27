@@ -16,6 +16,8 @@ import com.example.data.model.MediaItem
 import com.example.data.model.SortOption
 import com.example.data.model.StorageStats
 import com.example.data.model.ViewMode
+import com.example.data.media.MediaFilter
+import com.example.data.media.MediaRepository
 import com.example.data.model.ConflictResolution
 import com.example.data.model.FileOperationProgress
 import com.example.data.model.OperationStatus
@@ -29,7 +31,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
+import androidx.paging.PagingData
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -137,6 +143,18 @@ data class UiState(
 class UnifiedViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FileRepository(application)
+    private val mediaRepository = MediaRepository(application)
+    private val galleryFilterFlow = MutableStateFlow(MediaFilter.ALL)
+    private val galleryRefreshFlow = MutableStateFlow(0L)
+
+    /**
+     * Primary timeline data source. Only the currently loaded Paging window is kept
+     * in memory; the Gallery no longer needs the complete MediaStore library.
+     */
+    val galleryPagingFlow: Flow<PagingData<MediaItem>> =
+        combine(galleryFilterFlow, galleryRefreshFlow) { filter, _ -> filter }
+            .flatMapLatest { filter -> mediaRepository.pager(filter) }
+            .cachedIn(viewModelScope)
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
@@ -247,10 +265,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
             MainTab.GALLERY -> {
-                // Lazy load media when Gallery tab is opened
-                if (_uiState.value.allMediaItems.isEmpty()) {
-                    loadMedia()
-                }
+                // Timeline is backed by Paging and starts loading only when the UI
+                // collects galleryPagingFlow. Albums/favorites retain their legacy
+                // path temporarily and are loaded only when explicitly needed.
             }
         }
     }
@@ -377,7 +394,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         } else {
             loadFiles()
         }
-        loadMedia()
         loadStorageStats()
         calculateCategoryCounts()
     }
@@ -713,7 +729,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage("Renamed to '$newName'")
                 loadFiles()
-                loadMedia(forceRefresh = true)
+                refreshGallery()
+                refreshGallery()
+            loadMedia(forceRefresh = true)
             } else {
                 showMessage("Failed to rename file")
             }
@@ -726,6 +744,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage(if (toTrash) "Moved to Recycle Bin" else "Permanently deleted")
                 loadFiles()
+                refreshGallery()
                 loadMedia(forceRefresh = true)
                 loadStorageStats()
             } else {
@@ -772,6 +791,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun setGallerySubTab(subTab: GallerySubTab) {
         _uiState.update { it.copy(gallerySubTab = subTab) }
+        if (subTab == GallerySubTab.ALBUMS && _uiState.value.mediaAlbums.isEmpty()) {
+            loadMedia(forceRefresh = true)
+        }
     }
 
     private fun filterMediaList(list: List<MediaItem>, filter: String): List<MediaItem> {
@@ -784,19 +806,13 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGalleryFilter(filter: String) {
-        val allMedia = _uiState.value.allMediaItems
-        if (allMedia.isNotEmpty()) {
-            // Instantaneous 0ms switch without triggering network or disk queries
-            val filtered = filterMediaList(allMedia, filter)
-            _uiState.update {
-                it.copy(
-                    galleryFilter = filter,
-                    mediaItems = filtered
-                )
-            }
-        } else {
-            _uiState.update { it.copy(galleryFilter = filter) }
-            loadMedia()
+        _uiState.update { it.copy(galleryFilter = filter) }
+
+        when (filter) {
+            "ALL" -> galleryFilterFlow.value = MediaFilter.ALL
+            "PHOTOS" -> galleryFilterFlow.value = MediaFilter.PHOTOS
+            "VIDEOS" -> galleryFilterFlow.value = MediaFilter.VIDEOS
+            "FAVORITES" -> loadMedia(forceRefresh = true)
         }
     }
 
@@ -810,6 +826,10 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.updateGalleryColumns(clamped)
         }
+    }
+
+    fun refreshGallery() {
+        galleryRefreshFlow.value = System.currentTimeMillis()
     }
 
     fun loadMedia(forceRefresh: Boolean = false) {
@@ -1108,6 +1128,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 )
             }
             loadFiles()
+            refreshGallery()
         }
     }
 
