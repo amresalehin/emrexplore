@@ -230,7 +230,31 @@ fun GalleryScreen(
             }
         }
 
-        // Aves-style contextual selection bar. Selection is limited to explicitly selected items.\n        if (uiState.gallerySelection.isNotEmpty()) {\n            GallerySelectionBar(\n                count = uiState.gallerySelection.size,\n                onClear = { viewModel.clearGallerySelection() },\n                onFavorite = { viewModel.favoriteGallerySelection() },\n                onShare = {\n                    val uris = ArrayList(uiState.gallerySelection.map { it.uri })\n                    try {\n                        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {\n                            type = "*/*"\n                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)\n                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)\n                        }\n                        context.startActivity(Intent.createChooser(intent, "Share ${uiState.gallerySelection.size} items"))\n                    } catch (_: ActivityNotFoundException) {\n                        viewModel.showMessage("No app available to share these items")\n                    }\n                },\n                onDelete = { viewModel.deleteGallerySelection() }\n            )\n        }\n\n        // Body\n        if (uiState.isLoadingMedia) {
+        // Aves-style contextual selection bar. Selection is limited to explicitly selected items.
+        if (uiState.gallerySelection.isNotEmpty()) {
+            GallerySelectionBar(
+                count = uiState.gallerySelection.size,
+                onClear = { viewModel.clearGallerySelection() },
+                onFavorite = { viewModel.favoriteGallerySelection() },
+                onShare = {
+                    val uris = ArrayList(uiState.gallerySelection.map { it.uri })
+                    try {
+                        val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                            type = "*/*"
+                            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(intent, "Share ${uiState.gallerySelection.size} items"))
+                    } catch (_: ActivityNotFoundException) {
+                        viewModel.showMessage("No app available to share these items")
+                    }
+                },
+                onDelete = { viewModel.deleteGallerySelection() }
+            )
+        }
+
+        // Body
+        if (uiState.isLoadingMedia) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -267,7 +291,12 @@ fun GalleryScreen(
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                             else {
                             val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
-                            viewModel.openFullscreenMedia(item, loaded, when (uiState.galleryFilter) {\n                                "PHOTOS" -> FullscreenMediaSource.PHOTOS\n                                "VIDEOS" -> FullscreenMediaSource.VIDEOS\n                                "FAVORITES" -> FullscreenMediaSource.FAVORITES\n                                else -> FullscreenMediaSource.ALL\n                            })
+                            viewModel.openFullscreenMedia(item, loaded, when (uiState.galleryFilter) {
+                                "PHOTOS" -> FullscreenMediaSource.PHOTOS
+                                "VIDEOS" -> FullscreenMediaSource.VIDEOS
+                                "FAVORITES" -> FullscreenMediaSource.FAVORITES
+                                else -> FullscreenMediaSource.ALL
+                            })
                             }
                         },
                         onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
@@ -445,7 +474,21 @@ private fun MediaGridThumbnail(
             }
         }
 
-        if (selected) {\n            Box(\n                modifier = Modifier\n                    .align(Alignment.TopStart)\n                    .padding(6.dp)\n                    .size(24.dp)\n                    .background(MaterialTheme.colorScheme.primary, CircleShape),\n                contentAlignment = Alignment.Center\n            ) {\n                Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))\n            }\n        }\n\n        // Favorite star indicator\n        if (item.isFavorite && !selected) {
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .size(24.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(16.dp))
+            }
+        }
+
+        // Favorite star indicator
+        if (item.isFavorite && !selected) {
             Icon(
                 imageVector = Icons.Default.Star,
                 contentDescription = "Favorite",
