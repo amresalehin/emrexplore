@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -730,8 +731,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 showMessage("Renamed to '$newName'")
                 loadFiles()
                 refreshGallery()
-                refreshGallery()
-            loadMedia(forceRefresh = true)
+                loadMedia(forceRefresh = true)
             } else {
                 showMessage("Failed to rename file")
             }
@@ -763,6 +763,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             clearSelection()
             showMessage(if (toTrash) "Moved $count items to Recycle Bin" else "Deleted $count items")
             loadFiles()
+            refreshGallery()
             loadMedia(forceRefresh = true)
             loadStorageStats()
         }
