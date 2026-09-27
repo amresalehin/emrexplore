@@ -10,6 +10,11 @@ class MediaRepository(context: Context) {
 
     private val appContext = context.applicationContext
 
+    fun favoritesPager(): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(
+        config = PagingConfig(pageSize = 120, initialLoadSize = 120, prefetchDistance = 30, maxSize = 360, enablePlaceholders = false),
+        pagingSourceFactory = { FavoriteMediaPagingSource(appContext) }
+    ).flow
+
     fun albumPager(bucketId: String): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(
         config = PagingConfig(
             pageSize = MediaStorePagingSource.MAX_PAGE_SIZE,
