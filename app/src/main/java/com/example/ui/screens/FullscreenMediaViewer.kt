@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -80,7 +83,8 @@ fun FullscreenMediaViewer(
     currentIndex: Int,
     onClose: () -> Unit,
     onIndexChange: (Int) -> Unit,
-    onToggleFavorite: (FileItem) -> Unit
+    onToggleFavorite: (FileItem) -> Unit,
+    onInspectMetadata: (MediaItem) -> Unit = {}
 ) {
     BackHandler { onClose() }
 
@@ -299,11 +303,20 @@ fun FullscreenMediaViewer(
                         )
                     }
 
-                    // Info / EXIF
+                    // Info / EXIF Quick Sheet
                     IconButton(onClick = { showInfoSheet = true }) {
                         Icon(
                             imageVector = Icons.Default.Info,
                             contentDescription = "Media Info",
+                            tint = Color.White
+                        )
+                    }
+
+                    // Full Metadata Inspector (EXIF, IPTC, XMP)
+                    IconButton(onClick = { onInspectMetadata(currentItem) }) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Inspect EXIF, IPTC & XMP Metadata",
                             tint = Color.White
                         )
                     }
@@ -387,6 +400,19 @@ fun FullscreenMediaViewer(
                     val sec = (currentItem.duration / 1000) % 60
                     val min = (currentItem.duration / 1000) / 60
                     MediaInfoRow("Duration", String.format("%02d:%02d", min, sec))
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        showInfoSheet = false
+                        onInspectMetadata(currentItem)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Inspect Full EXIF, IPTC & XMP Tree")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))

@@ -16,17 +16,25 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import com.example.data.local.AppDatabase
 import com.example.data.local.BookmarkEntity
+import com.example.data.local.ExplorerPreferencesEntity
 import com.example.data.local.FavoriteEntity
+import com.example.data.local.IndexStatusEntity
+import com.example.data.local.IndexedFileEntity
 import com.example.data.local.RecentEntity
 import com.example.data.local.TrashEntity
 import com.example.data.model.CategoryType
 import com.example.data.model.FileItem
 import com.example.data.model.MediaAlbum
 import com.example.data.model.MediaItem
+import com.example.data.model.SortOption
 import com.example.data.model.StorageStats
+import com.example.data.model.ViewMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -39,6 +47,14 @@ import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
+data class PagedDirectoryResult(
+    val items: List<FileItem>,
+    val totalCount: Int,
+    val page: Int,
+    val pageSize: Int,
+    val hasMore: Boolean
+)
+
 class FileRepository(private val context: Context) {
 
     private val db = AppDatabase.getDatabase(context)
@@ -46,11 +62,93 @@ class FileRepository(private val context: Context) {
     private val trashDao = db.trashDao()
     private val recentDao = db.recentDao()
     private val bookmarkDao = db.bookmarkDao()
+    private val fileIndexDao = db.fileIndexDao()
+    private val preferencesDao = db.preferencesDao()
+    private val indexStatusDao = db.indexStatusDao()
+    private val indexingMutex = Mutex()
+    private val folderCache = java.util.concurrent.ConcurrentHashMap<String, List<FileItem>>()
+
+    fun invalidateFolderCache(dirPath: String? = null) {
+        if (dirPath == null) {
+            folderCache.clear()
+        } else {
+            folderCache.remove(dirPath)
+        }
+    }
 
     val favoritesFlow: Flow<List<FavoriteEntity>> = favoriteDao.getAllFavorites()
     val trashFlow: Flow<List<TrashEntity>> = trashDao.getAllTrash()
     val recentsFlow: Flow<List<RecentEntity>> = recentDao.getRecentItems()
     val bookmarksFlow: Flow<List<BookmarkEntity>> = bookmarkDao.getBookmarks()
+    val preferencesFlow: Flow<ExplorerPreferencesEntity> = preferencesDao.getPreferencesFlow().map {
+        it ?: ExplorerPreferencesEntity()
+    }
+    val indexStatusFlow: Flow<IndexStatusEntity> = indexStatusDao.getStatusFlow().map {
+        it ?: IndexStatusEntity()
+    }
+    val totalIndexedCountFlow: Flow<Int> = fileIndexDao.getTotalCountFlow()
+
+    suspend fun getPreferences(): ExplorerPreferencesEntity = withContext(Dispatchers.IO) {
+        val existing = preferencesDao.getPreferences()
+        if (existing == null) {
+            val defaultPrefs = ExplorerPreferencesEntity()
+            preferencesDao.savePreferences(defaultPrefs)
+            defaultPrefs
+        } else {
+            existing
+        }
+    }
+
+    suspend fun savePreferences(prefs: ExplorerPreferencesEntity) = withContext(Dispatchers.IO) {
+        preferencesDao.savePreferences(prefs)
+    }
+
+    suspend fun updateViewMode(viewMode: ViewMode) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateViewMode(viewMode.name)
+    }
+
+    suspend fun updateSortOption(sortOption: SortOption) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateSortOption(sortOption.name)
+    }
+
+    suspend fun updateShowHidden(showHidden: Boolean) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateShowHidden(showHidden)
+    }
+
+    suspend fun updateLastPath(path: String) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateLastPath(path)
+    }
+
+    suspend fun updateGalleryColumns(cols: Int) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateGalleryColumns(cols.coerceIn(2, 4))
+    }
+
+    suspend fun updateFastSearch(enabled: Boolean) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateFastSearch(enabled)
+    }
+
+    suspend fun updateRememberLastDir(remember: Boolean) = withContext(Dispatchers.IO) {
+        ensurePreferencesInitialized()
+        preferencesDao.updateRememberLastDir(remember)
+    }
+
+    suspend fun resetPreferences(): ExplorerPreferencesEntity = withContext(Dispatchers.IO) {
+        val defaultPrefs = ExplorerPreferencesEntity()
+        preferencesDao.savePreferences(defaultPrefs)
+        defaultPrefs
+    }
+
+    private suspend fun ensurePreferencesInitialized() {
+        if (preferencesDao.getPreferences() == null) {
+            preferencesDao.savePreferences(ExplorerPreferencesEntity())
+        }
+    }
 
     val rootPath: String
         get() {
@@ -85,7 +183,180 @@ class FileRepository(private val context: Context) {
                 e.printStackTrace()
             }
         }
+        ensurePreferencesInitialized()
     }
+
+    suspend fun totalIndexedCount(): Int = withContext(Dispatchers.IO) {
+        fileIndexDao.getTotalCount()
+    }
+
+    suspend fun indexStorage(force: Boolean = false): Int = withContext(Dispatchers.IO) {
+        indexingMutex.withLock {
+            val currentStatus = indexStatusDao.getStatus()
+            val currentCount = fileIndexDao.getTotalCount()
+            if (!force && currentStatus?.isIndexing == true) {
+                return@withContext currentCount
+            }
+            if (!force && currentCount > 0 && currentStatus != null && (System.currentTimeMillis() - currentStatus.lastIndexedTimestamp) < 300_000) {
+                return@withContext currentCount
+            }
+
+            indexStatusDao.updateStatus(
+                IndexStatusEntity(
+                    id = 1,
+                    isIndexing = true,
+                    lastIndexedTimestamp = currentStatus?.lastIndexedTimestamp ?: 0L,
+                    totalIndexedCount = currentCount,
+                    statusMessage = "Indexing storage..."
+                )
+            )
+
+            if (force) {
+                fileIndexDao.clearIndex()
+            }
+
+            val targets = listOf(
+                File(rootPath),
+                baseWorkingDir
+            ).distinctBy { it.absolutePath }
+
+            val batch = mutableListOf<IndexedFileEntity>()
+            var indexedTotal = 0
+
+            for (target in targets) {
+                scanDirForIndexing(target, batch, maxDepth = 4, currentDepth = 0) { count ->
+                    indexedTotal += count
+                    indexStatusDao.updateStatus(
+                        IndexStatusEntity(
+                            id = 1,
+                            isIndexing = true,
+                            lastIndexedTimestamp = 0L,
+                            totalIndexedCount = indexedTotal,
+                            statusMessage = "Indexing files ($indexedTotal)..."
+                        )
+                    )
+                }
+            }
+
+            if (batch.isNotEmpty()) {
+                fileIndexDao.insertAll(batch)
+                indexedTotal += batch.size
+                batch.clear()
+            }
+
+            val finalCount = fileIndexDao.getTotalCount()
+            indexStatusDao.updateStatus(
+                IndexStatusEntity(
+                    id = 1,
+                    isIndexing = false,
+                    lastIndexedTimestamp = System.currentTimeMillis(),
+                    totalIndexedCount = finalCount,
+                    statusMessage = "Indexed $finalCount files & folders"
+                )
+            )
+
+            finalCount
+        }
+    }
+
+    private suspend fun scanDirForIndexing(
+        dir: File,
+        batch: MutableList<IndexedFileEntity>,
+        maxDepth: Int,
+        currentDepth: Int,
+        onBatchFlushed: suspend (Int) -> Unit
+    ) {
+        if (!dir.exists() || !dir.isDirectory || currentDepth > maxDepth) return
+        val children = dir.listFiles() ?: return
+
+        for (file in children) {
+            val name = file.name
+            if (name.startsWith(".") && name != ".trash") continue
+            if (name == "Android" || name == "cache") continue
+
+            val isDir = file.isDirectory
+            val ext = if (isDir) "" else file.extension.lowercase()
+            val mime = if (isDir) "inode/directory" else (MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: inferMime(ext))
+            val category = determineCategory(isDir, ext, file.parentFile?.name)
+            val childCount = if (isDir) (file.listFiles()?.size ?: 0) else 0
+
+            batch.add(
+                IndexedFileEntity(
+                    path = file.absolutePath,
+                    name = file.name,
+                    parentPath = file.parent ?: "",
+                    size = if (isDir) 0L else file.length(),
+                    lastModified = file.lastModified(),
+                    isDirectory = isDir,
+                    mimeType = mime,
+                    extension = ext,
+                    category = category.name,
+                    childCount = childCount,
+                    indexedTimestamp = System.currentTimeMillis()
+                )
+            )
+
+            if (batch.size >= 150) {
+                fileIndexDao.insertAll(batch)
+                val flushedSize = batch.size
+                batch.clear()
+                onBatchFlushed(flushedSize)
+            }
+
+            if (isDir) {
+                scanDirForIndexing(file, batch, maxDepth, currentDepth + 1, onBatchFlushed)
+            }
+        }
+    }
+
+    fun determineCategory(isDirectory: Boolean, ext: String, parentName: String?): CategoryType {
+        if (isDirectory) return CategoryType.DOCUMENTS
+        val lowerExt = ext.lowercase()
+        return when {
+            lowerExt in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp", "heic") -> CategoryType.IMAGES
+            lowerExt in listOf("mp4", "mkv", "webm", "avi", "mov", "3gp") -> CategoryType.VIDEOS
+            lowerExt in listOf("mp3", "m4a", "wav", "ogg", "flac", "aac") -> CategoryType.AUDIO
+            lowerExt in listOf("zip", "rar", "7z", "tar", "gz", "bz2") -> CategoryType.ARCHIVES
+            lowerExt in listOf("apk", "xapk", "apks") -> CategoryType.APKS
+            parentName?.equals("Download", ignoreCase = true) == true || parentName?.equals("Downloads", ignoreCase = true) == true -> CategoryType.DOWNLOADS
+            lowerExt in listOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "md", "csv", "json", "xml", "html", "kt", "java", "py", "log") -> CategoryType.DOCUMENTS
+            else -> CategoryType.DOCUMENTS
+        }
+    }
+
+    suspend fun indexFileOrDir(file: File) = withContext(Dispatchers.IO) {
+        if (!file.exists()) return@withContext
+        val isDir = file.isDirectory
+        val ext = if (isDir) "" else file.extension.lowercase()
+        val mime = if (isDir) "inode/directory" else (MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: inferMime(ext))
+        val category = determineCategory(isDir, ext, file.parentFile?.name)
+        val childCount = if (isDir) (file.listFiles()?.size ?: 0) else 0
+
+        fileIndexDao.insertOrUpdate(
+            IndexedFileEntity(
+                path = file.absolutePath,
+                name = file.name,
+                parentPath = file.parent ?: "",
+                size = if (isDir) 0L else file.length(),
+                lastModified = file.lastModified(),
+                isDirectory = isDir,
+                mimeType = mime,
+                extension = ext,
+                category = category.name,
+                childCount = childCount,
+                indexedTimestamp = System.currentTimeMillis()
+            )
+        )
+    }
+
+    suspend fun removeIndexedPath(path: String, isDirectory: Boolean) = withContext(Dispatchers.IO) {
+        if (isDirectory) {
+            fileIndexDao.deleteByPathTree(path, path)
+        } else {
+            fileIndexDao.deleteByPath(path)
+        }
+    }
+
 
     private fun createSeedDirectoriesAndFiles() {
         val root = baseWorkingDir
@@ -316,20 +587,288 @@ class FileRepository(private val context: Context) {
         }
     }
 
+    suspend fun getCachedFiles(dirPath: String, showHidden: Boolean): List<FileItem>? = withContext(Dispatchers.IO) {
+        val inMemory = folderCache[dirPath]
+        if (inMemory != null) {
+            return@withContext if (showHidden) inMemory else inMemory.filter { !it.name.startsWith(".") }
+        }
+
+        try {
+            val entities = fileIndexDao.getFilesByParent(dirPath)
+            if (entities.isNotEmpty()) {
+                val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+                val items = entities.map { entity ->
+                    FileItem(
+                        name = entity.name,
+                        path = entity.path,
+                        size = entity.size,
+                        lastModified = entity.lastModified,
+                        isDirectory = entity.isDirectory,
+                        mimeType = entity.mimeType,
+                        extension = entity.extension,
+                        isFavorite = favSet.contains(entity.path),
+                        childCount = entity.childCount,
+                        uri = Uri.fromFile(File(entity.path))
+                    )
+                }
+                folderCache[dirPath] = items
+                return@withContext if (showHidden) items else items.filter { !it.name.startsWith(".") }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        null
+    }
+
+    suspend fun getFilesPaged(
+        dirPath: String,
+        page: Int,
+        pageSize: Int = 40,
+        sortOption: SortOption = SortOption.NAME_ASC,
+        showHidden: Boolean = false
+    ): PagedDirectoryResult = withContext(Dispatchers.IO) {
+        val dir = File(dirPath)
+        if (!dir.exists() || !dir.isDirectory) {
+            return@withContext PagedDirectoryResult(emptyList(), 0, page, pageSize, false)
+        }
+
+        // 1. Check in-memory cache first if already populated
+        val cached = folderCache[dirPath]
+        if (cached != null) {
+            val filtered = if (showHidden) cached else cached.filter { !it.name.startsWith(".") }
+            val sorted = sortFileList(filtered, sortOption)
+            val offset = page * pageSize
+            val pagedItems = if (offset >= sorted.size) emptyList() else sorted.subList(offset, minOf(offset + pageSize, sorted.size))
+            return@withContext PagedDirectoryResult(
+                items = pagedItems,
+                totalCount = sorted.size,
+                page = page,
+                pageSize = pageSize,
+                hasMore = (offset + pageSize) < sorted.size
+            )
+        }
+
+        // 2. Check Room DB if indexed
+        try {
+            val roomCount = fileIndexDao.getCountByParent(dirPath)
+            if (roomCount > 0) {
+                val entities = fileIndexDao.getFilesByParentPaged(dirPath, limit = pageSize, offset = page * pageSize)
+                val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+                val items = entities
+                    .filter { showHidden || !it.name.startsWith(".") }
+                    .map { entity ->
+                        FileItem(
+                            name = entity.name,
+                            path = entity.path,
+                            size = entity.size,
+                            lastModified = entity.lastModified,
+                            isDirectory = entity.isDirectory,
+                            mimeType = entity.mimeType,
+                            extension = entity.extension,
+                            isFavorite = favSet.contains(entity.path),
+                            childCount = entity.childCount,
+                            uri = Uri.fromFile(File(entity.path))
+                        )
+                    }
+                val sorted = sortFileList(items, sortOption)
+                val offset = page * pageSize
+                return@withContext PagedDirectoryResult(
+                    items = sorted,
+                    totalCount = roomCount,
+                    page = page,
+                    pageSize = pageSize,
+                    hasMore = (offset + pageSize) < roomCount
+                )
+            }
+        } catch (e: Exception) {
+            // fallback to disk
+        }
+
+        // 3. Lazy direct filesystem paging
+        // Reading dir.list() only fetches string filenames without native stat() calls or object allocation
+        val rawNames = dir.list() ?: return@withContext PagedDirectoryResult(emptyList(), 0, page, pageSize, false)
+        val validNames = rawNames.filter { showHidden || !it.startsWith(".") }
+        val totalCount = validNames.size
+
+        // Quick filename-level sort
+        val sortedNames = when (sortOption) {
+            SortOption.NAME_DESC -> validNames.sortedWith(String.CASE_INSENSITIVE_ORDER.reversed())
+            else -> validNames.sortedWith(String.CASE_INSENSITIVE_ORDER)
+        }
+
+        val offset = page * pageSize
+        if (offset >= totalCount) {
+            return@withContext PagedDirectoryResult(emptyList(), totalCount, page, pageSize, false)
+        }
+
+        val pageNames = sortedNames.subList(offset, minOf(offset + pageSize, totalCount))
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+
+        val pageItems = ArrayList<FileItem>(pageNames.size)
+        val entitiesToBatch = ArrayList<IndexedFileEntity>(pageNames.size)
+
+        for (name in pageNames) {
+            val file = File(dir, name)
+            val isDir = file.isDirectory
+            val ext = if (isDir) "" else file.extension.lowercase()
+            val mime = if (isDir) {
+                "inode/directory"
+            } else {
+                MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: inferMime(ext)
+            }
+            val childCount = if (isDir) fastChildCount(file) else 0
+            val isFav = favSet.contains(file.absolutePath)
+            val size = if (isDir) 0L else file.length()
+            val lastModified = file.lastModified()
+
+            val item = FileItem(
+                name = name,
+                path = file.absolutePath,
+                size = size,
+                lastModified = lastModified,
+                isDirectory = isDir,
+                mimeType = mime,
+                extension = ext,
+                isFavorite = isFav,
+                childCount = childCount,
+                uri = Uri.fromFile(file)
+            )
+            pageItems.add(item)
+
+            entitiesToBatch.add(
+                IndexedFileEntity(
+                    path = file.absolutePath,
+                    name = name,
+                    parentPath = dirPath,
+                    size = size,
+                    lastModified = lastModified,
+                    isDirectory = isDir,
+                    mimeType = mime,
+                    extension = ext,
+                    category = determineCategory(isDir, ext, dir.name).name,
+                    childCount = childCount,
+                    indexedTimestamp = System.currentTimeMillis()
+                )
+            )
+        }
+
+        if (entitiesToBatch.isNotEmpty()) {
+            try {
+                fileIndexDao.insertAll(entitiesToBatch)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        val sortedPageItems = sortFileList(pageItems, sortOption)
+
+        PagedDirectoryResult(
+            items = sortedPageItems,
+            totalCount = totalCount,
+            page = page,
+            pageSize = pageSize,
+            hasMore = (offset + pageSize) < totalCount
+        )
+    }
+
+    private fun sortFileList(items: List<FileItem>, sortOption: SortOption): List<FileItem> {
+        val dirs = items.filter { it.isDirectory }
+        val nonDirs = items.filter { !it.isDirectory }
+
+        val sortComparator: Comparator<FileItem> = when (sortOption) {
+            SortOption.NAME_ASC -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+            SortOption.NAME_DESC -> compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.name }
+            SortOption.SIZE_ASC -> compareBy { it.size }
+            SortOption.SIZE_DESC -> compareByDescending { it.size }
+            SortOption.DATE_ASC -> compareBy { it.lastModified }
+            SortOption.DATE_DESC -> compareByDescending { it.lastModified }
+            SortOption.TYPE -> compareBy<FileItem> { it.extension }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name }
+        }
+
+        return dirs.sortedWith(sortComparator) + nonDirs.sortedWith(sortComparator)
+    }
+
     suspend fun getFiles(dirPath: String, showHidden: Boolean): List<FileItem> = withContext(Dispatchers.IO) {
         val dir = File(dirPath)
         if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
 
         val files = dir.listFiles() ?: return@withContext emptyList()
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
 
-        files.filter { file ->
-            if (!showHidden && file.name.startsWith(".")) false else true
-        }.map { file ->
-            toFileItem(file)
+        val allItems = ArrayList<FileItem>(files.size)
+        val entitiesToBatch = ArrayList<IndexedFileEntity>(files.size)
+
+        for (file in files) {
+            val isDir = file.isDirectory
+            val name = file.name
+            val ext = if (isDir) "" else file.extension.lowercase()
+            val mime = if (isDir) {
+                "inode/directory"
+            } else {
+                MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: inferMime(ext)
+            }
+            val childCount = if (isDir) fastChildCount(file) else 0
+            val isFav = favSet.contains(file.absolutePath)
+            val size = if (isDir) 0L else file.length()
+            val lastModified = file.lastModified()
+
+            val item = FileItem(
+                name = name,
+                path = file.absolutePath,
+                size = size,
+                lastModified = lastModified,
+                isDirectory = isDir,
+                mimeType = mime,
+                extension = ext,
+                isFavorite = isFav,
+                childCount = childCount,
+                uri = Uri.fromFile(file)
+            )
+            allItems.add(item)
+
+            entitiesToBatch.add(
+                IndexedFileEntity(
+                    path = file.absolutePath,
+                    name = name,
+                    parentPath = dirPath,
+                    size = size,
+                    lastModified = lastModified,
+                    isDirectory = isDir,
+                    mimeType = mime,
+                    extension = ext,
+                    category = determineCategory(isDir, ext, dir.name).name,
+                    childCount = childCount,
+                    indexedTimestamp = System.currentTimeMillis()
+                )
+            )
+        }
+
+        folderCache[dirPath] = allItems
+
+        if (entitiesToBatch.isNotEmpty()) {
+            try {
+                fileIndexDao.insertAll(entitiesToBatch)
+            } catch (e: Exception) {
+                // ignore
+            }
+        }
+
+        if (showHidden) allItems else allItems.filter { !it.name.startsWith(".") }
+    }
+
+    private fun fastChildCount(dir: File): Int {
+        val name = dir.name
+        if (name.equals("Android", ignoreCase = true) || name.equals("data", ignoreCase = true) || name.equals("obb", ignoreCase = true)) {
+            return 0
+        }
+        return try {
+            dir.list()?.size ?: 0
+        } catch (e: Exception) {
+            0
         }
     }
 
-    private suspend fun toFileItem(file: File): FileItem {
+    private suspend fun toFileItem(file: File, favSet: Set<String>? = null): FileItem {
         val isDir = file.isDirectory
         val ext = if (isDir) "" else file.extension.lowercase()
         val mime = if (isDir) {
@@ -338,11 +877,9 @@ class FileRepository(private val context: Context) {
             MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: inferMime(ext)
         }
 
-        val childCount = if (isDir) {
-            file.listFiles()?.size ?: 0
-        } else 0
+        val childCount = if (isDir) fastChildCount(file) else 0
 
-        val isFav = favoriteDao.isFavoriteSync(file.absolutePath)
+        val isFav = favSet?.contains(file.absolutePath) ?: favoriteDao.isFavoriteSync(file.absolutePath)
 
         return FileItem(
             name = file.name,
@@ -383,6 +920,8 @@ class FileRepository(private val context: Context) {
     // MediaStore & App Directory Gallery Items
     suspend fun getMediaItems(filter: String = "ALL"): List<MediaItem> = withContext(Dispatchers.IO) {
         val mediaList = mutableListOf<MediaItem>()
+        val addedPaths = HashSet<String>()
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
 
         // 1. Query MediaStore Images & Videos
         try {
@@ -434,7 +973,8 @@ class FileRepository(private val context: Context) {
                     val bucketId = cursor.getString(bucketIdCol) ?: "default"
                     val bucketName = cursor.getString(bucketNameCol) ?: "Pictures"
 
-                    val isFav = favoriteDao.isFavoriteSync(path)
+                    val isFav = favSet.contains(path)
+                    addedPaths.add(path)
 
                     mediaList.add(
                         MediaItem(
@@ -505,7 +1045,8 @@ class FileRepository(private val context: Context) {
                     val bucketId = cursor.getString(bucketIdCol) ?: "default"
                     val bucketName = cursor.getString(bucketNameCol) ?: "Videos"
 
-                    val isFav = favoriteDao.isFavoriteSync(path)
+                    val isFav = favSet.contains(path)
+                    addedPaths.add(path)
 
                     mediaList.add(
                         MediaItem(
@@ -532,7 +1073,7 @@ class FileRepository(private val context: Context) {
         }
 
         // 2. Also scan app working directory (seeded camera, screenshots, etc.)
-        scanDirectoryForMedia(baseWorkingDir, mediaList)
+        scanDirectoryForMedia(baseWorkingDir, mediaList, addedPaths, favSet)
 
         // Filter
         val filtered = when (filter) {
@@ -545,23 +1086,27 @@ class FileRepository(private val context: Context) {
         filtered.sortedByDescending { it.dateAdded }
     }
 
-    private suspend fun scanDirectoryForMedia(dir: File, outList: MutableList<MediaItem>) {
+    private fun scanDirectoryForMedia(
+        dir: File,
+        outList: MutableList<MediaItem>,
+        addedPaths: MutableSet<String>,
+        favSet: Set<String>
+    ) {
         if (!dir.exists() || !dir.isDirectory) return
         val files = dir.listFiles() ?: return
 
         for (file in files) {
             if (file.isDirectory) {
                 if (!file.name.startsWith(".")) {
-                    scanDirectoryForMedia(file, outList)
+                    scanDirectoryForMedia(file, outList, addedPaths, favSet)
                 }
             } else {
                 val ext = file.extension.lowercase()
                 val isImg = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
                 val isVid = ext in listOf("mp4", "mkv", "webm", "avi", "mov")
                 if (isImg || isVid) {
-                    val alreadyAdded = outList.any { it.path == file.absolutePath }
-                    if (!alreadyAdded) {
-                        val isFav = favoriteDao.isFavoriteSync(file.absolutePath)
+                    if (addedPaths.add(file.absolutePath)) {
+                        val isFav = favSet.contains(file.absolutePath)
                         outList.add(
                             MediaItem(
                                 id = file.absolutePath.hashCode().toLong(),
@@ -601,37 +1146,235 @@ class FileRepository(private val context: Context) {
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {
         val result = mutableListOf<FileItem>()
-        val rootsToScan = listOf(
-            File(rootPath),
-            baseWorkingDir
-        ).distinctBy { it.absolutePath }
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
 
-        for (root in rootsToScan) {
-            scanFilesRecursively(root, category, result, maxDepth = 4, currentDepth = 0)
+        when (category) {
+            CategoryType.IMAGES -> {
+                // MediaStore + base directory
+                val media = getMediaItems("PHOTOS")
+                for (m in media) {
+                    result.add(
+                        FileItem(
+                            name = m.name,
+                            path = m.path,
+                            size = m.size,
+                            lastModified = m.dateAdded,
+                            isDirectory = false,
+                            mimeType = m.mimeType,
+                            extension = File(m.path).extension.lowercase(),
+                            isFavorite = m.isFavorite,
+                            uri = m.uri
+                        )
+                    )
+                }
+            }
+            CategoryType.VIDEOS -> {
+                val media = getMediaItems("VIDEOS")
+                for (m in media) {
+                    result.add(
+                        FileItem(
+                            name = m.name,
+                            path = m.path,
+                            size = m.size,
+                            lastModified = m.dateAdded,
+                            isDirectory = false,
+                            mimeType = m.mimeType,
+                            extension = File(m.path).extension.lowercase(),
+                            isFavorite = m.isFavorite,
+                            uri = m.uri
+                        )
+                    )
+                }
+            }
+            CategoryType.AUDIO -> {
+                try {
+                    val audioUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                    val proj = arrayOf(
+                        MediaStore.Audio.Media._ID,
+                        MediaStore.Audio.Media.DISPLAY_NAME,
+                        MediaStore.Audio.Media.DATA,
+                        MediaStore.Audio.Media.SIZE,
+                        MediaStore.Audio.Media.DATE_ADDED,
+                        MediaStore.Audio.Media.MIME_TYPE
+                    )
+                    context.contentResolver.query(audioUri, proj, null, null, "${MediaStore.Audio.Media.DATE_ADDED} DESC")?.use { cursor ->
+                        val idCol = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                        val nameCol = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                        val dataCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
+                        val sizeCol = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                        val dateCol = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_ADDED)
+                        val mimeCol = cursor.getColumnIndex(MediaStore.Audio.Media.MIME_TYPE)
+                        while (cursor.moveToNext()) {
+                            val id = cursor.getLong(idCol)
+                            val path = cursor.getString(dataCol) ?: ""
+                            val name = cursor.getString(nameCol) ?: "Audio_$id"
+                            result.add(
+                                FileItem(
+                                    name = name,
+                                    path = path,
+                                    size = cursor.getLong(sizeCol),
+                                    lastModified = cursor.getLong(dateCol) * 1000,
+                                    isDirectory = false,
+                                    mimeType = cursor.getString(mimeCol) ?: "audio/mpeg",
+                                    extension = File(path).extension.lowercase(),
+                                    isFavorite = favSet.contains(path),
+                                    uri = ContentUris.withAppendedId(audioUri, id)
+                                )
+                            )
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                // Also scan audio in baseWorkingDir
+                val audioDir = File(baseWorkingDir, "Audio")
+                if (audioDir.exists()) {
+                    audioDir.listFiles()?.forEach { f ->
+                        if (f.isFile && f.extension.lowercase() in setOf("mp3", "wav", "m4a", "ogg")) {
+                            result.add(toFileItem(f, favSet))
+                        }
+                    }
+                }
+            }
+            CategoryType.DOWNLOADS -> {
+                listOf(File(rootPath, "Download"), File(baseWorkingDir, "Download")).forEach { dir ->
+                    if (dir.exists()) {
+                        dir.listFiles()?.filter { !it.name.startsWith(".") }?.forEach { f ->
+                            result.add(toFileItem(f, favSet))
+                        }
+                    }
+                }
+            }
+            CategoryType.DOCUMENTS, CategoryType.ARCHIVES, CategoryType.APKS -> {
+                val targets = listOf(
+                    baseWorkingDir,
+                    File(rootPath, "Documents"),
+                    File(rootPath, "Download")
+                ).filter { it.exists() }
+                for (dir in targets) {
+                    scanFilesRecursively(dir, category, result, maxDepth = 2, currentDepth = 0, favSet = favSet)
+                }
+            }
         }
 
         result.distinctBy { it.path }.sortedByDescending { it.lastModified }
     }
 
+    suspend fun getCategoryCounts(): Map<CategoryType, Int> = withContext(Dispatchers.IO) {
+        val totalIndexed = try { fileIndexDao.getTotalCount() } catch (e: Exception) { 0 }
+        if (totalIndexed > 0) {
+            val stats = try { fileIndexDao.getCategoryStats() } catch (e: Exception) { emptyList() }
+            if (stats.isNotEmpty()) {
+                val statMap = stats.associate { it.category to it.count }
+                val counts = mutableMapOf<CategoryType, Int>()
+                CategoryType.entries.forEach { cat ->
+                    counts[cat] = statMap[cat.name] ?: 0
+                }
+                return@withContext counts
+            }
+        }
+
+        val counts = mutableMapOf<CategoryType, Int>()
+        counts[CategoryType.IMAGES] = queryMediaStoreCount(MediaStore.Images.Media.EXTERNAL_CONTENT_URI) +
+                countFilesWithExtensions(baseWorkingDir, setOf("jpg", "jpeg", "png", "webp", "gif"))
+        counts[CategoryType.VIDEOS] = queryMediaStoreCount(MediaStore.Video.Media.EXTERNAL_CONTENT_URI) +
+                countFilesWithExtensions(baseWorkingDir, setOf("mp4", "mkv", "webm", "avi", "mov"))
+        counts[CategoryType.AUDIO] = queryMediaStoreCount(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI) +
+                countFilesWithExtensions(baseWorkingDir, setOf("mp3", "wav", "m4a", "ogg"))
+
+        val downloadDir = File(rootPath, "Download")
+        counts[CategoryType.DOWNLOADS] = (downloadDir.listFiles()?.count { !it.name.startsWith(".") } ?: 0) +
+                (File(baseWorkingDir, "Download").listFiles()?.count { !it.name.startsWith(".") } ?: 0)
+
+        val commonDirs = listOf(
+            File(baseWorkingDir, "Documents"),
+            File(rootPath, "Documents"),
+            downloadDir
+        ).filter { it.exists() }
+
+        var docCount = 0
+        var archCount = 0
+        var apkCount = 0
+        val docExts = setOf("pdf", "doc", "docx", "txt", "md", "json", "xml", "csv")
+        val archExts = setOf("zip", "rar", "7z", "tar", "gz")
+        val apkExts = setOf("apk", "xapk")
+
+        for (dir in commonDirs) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile) {
+                    val ext = f.extension.lowercase()
+                    when {
+                        ext in docExts -> docCount++
+                        ext in archExts -> archCount++
+                        ext in apkExts -> apkCount++
+                    }
+                }
+            }
+        }
+
+        counts[CategoryType.DOCUMENTS] = docCount
+        counts[CategoryType.ARCHIVES] = archCount
+        counts[CategoryType.APKS] = apkCount
+
+        counts
+    }
+
     suspend fun searchFiles(query: String, category: CategoryType? = null): List<FileItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        val prefs = getPreferences()
+        if (prefs.enableFastRoomSearch) {
+            val indexed = searchIndexedFiles(query, category)
+            if (indexed.isNotEmpty()) {
+                return@withContext indexed
+            }
+        }
+
         val q = query.trim().lowercase()
         val result = mutableListOf<FileItem>()
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
         val rootsToScan = listOf(
             File(rootPath),
             baseWorkingDir
         ).distinctBy { it.absolutePath }
 
         for (root in rootsToScan) {
-            scanFilesForSearch(root, q, category, result, maxDepth = 4, currentDepth = 0)
+            scanFilesForSearch(root, q, category, result, maxDepth = 3, currentDepth = 0, favSet = favSet)
+            if (result.size >= 100) break
         }
 
         // Prioritize exact/prefix matches first, then contains, sorted by recent date
         result.distinctBy { it.path }.sortedWith(
             compareByDescending<FileItem> { it.name.lowercase().startsWith(q) }
                 .thenByDescending { it.lastModified }
-        )
+        ).take(100)
     }
+
+    suspend fun searchIndexedFiles(query: String, category: CategoryType? = null): List<FileItem> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        val q = query.trim()
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val entities = if (category != null) {
+            fileIndexDao.searchFilesByCategory(q, category.name, limit = 150)
+        } else {
+            fileIndexDao.searchFiles(q, limit = 150)
+        }
+        entities.map { entity ->
+            val file = File(entity.path)
+            FileItem(
+                name = entity.name,
+                path = entity.path,
+                size = entity.size,
+                lastModified = entity.lastModified,
+                isDirectory = entity.isDirectory,
+                mimeType = entity.mimeType,
+                extension = entity.extension,
+                isFavorite = favSet.contains(entity.path),
+                childCount = entity.childCount,
+                uri = Uri.fromFile(file)
+            )
+        }
+    }
+
 
     private suspend fun scanFilesForSearch(
         dir: File,
@@ -639,26 +1382,28 @@ class FileRepository(private val context: Context) {
         category: CategoryType?,
         outList: MutableList<FileItem>,
         maxDepth: Int,
-        currentDepth: Int
+        currentDepth: Int,
+        favSet: Set<String>
     ) {
-        if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) return
+        if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory || outList.size >= 100) return
         val list = dir.listFiles() ?: return
 
         for (file in list) {
+            if (outList.size >= 100) return
             val name = file.name
             if (name.startsWith(".") && name != ".trash") {
                 continue
             }
             if (file.isDirectory) {
-                if (name != "Android" && name != ".trash") {
+                if (name != "Android" && name != ".trash" && name != "cache") {
                     if (category == null && name.lowercase().contains(query)) {
-                        outList.add(toFileItem(file))
+                        outList.add(toFileItem(file, favSet))
                     }
-                    scanFilesForSearch(file, query, category, outList, maxDepth, currentDepth + 1)
+                    scanFilesForSearch(file, query, category, outList, maxDepth, currentDepth + 1, favSet)
                 }
             } else {
                 if (name.lowercase().contains(query)) {
-                    val item = toFileItem(file)
+                    val item = toFileItem(file, favSet)
                     val matchesCategory = if (category == null) {
                         true
                     } else {
@@ -686,7 +1431,8 @@ class FileRepository(private val context: Context) {
         category: CategoryType,
         outList: MutableList<FileItem>,
         maxDepth: Int,
-        currentDepth: Int
+        currentDepth: Int,
+        favSet: Set<String>? = null
     ) {
         if (currentDepth > maxDepth || !dir.exists() || !dir.isDirectory) return
         val list = dir.listFiles() ?: return
@@ -694,10 +1440,10 @@ class FileRepository(private val context: Context) {
         for (file in list) {
             if (file.isDirectory) {
                 if (!file.name.startsWith(".") && file.name != "Android") {
-                    scanFilesRecursively(file, category, outList, maxDepth, currentDepth + 1)
+                    scanFilesRecursively(file, category, outList, maxDepth, currentDepth + 1, favSet)
                 }
             } else {
-                val item = toFileItem(file)
+                val item = toFileItem(file, favSet)
                 val matches = when (category) {
                     CategoryType.IMAGES -> item.isImage
                     CategoryType.VIDEOS -> item.isVideo
@@ -715,7 +1461,7 @@ class FileRepository(private val context: Context) {
         }
     }
 
-    // Storage Statistics
+    // Storage Statistics (Fast calculation)
     suspend fun getStorageStats(): StorageStats = withContext(Dispatchers.IO) {
         val stat = StatFs(Environment.getDataDirectory().path)
         val blockSize = stat.blockSizeLong
@@ -726,27 +1472,14 @@ class FileRepository(private val context: Context) {
         val free = availableBlocks * blockSize
         val used = total - free
 
-        // Approximate category distribution
-        var imgBytes = 0L
-        var vidBytes = 0L
-        var audBytes = 0L
-        var docBytes = 0L
-
-        val roots = listOf(File(rootPath), baseWorkingDir).distinctBy { it.absolutePath }
-        for (r in roots) {
-            r.walkTopDown().maxDepth(3).forEach { f ->
-                if (f.isFile) {
-                    val ext = f.extension.lowercase()
-                    val len = f.length()
-                    when {
-                        ext in listOf("jpg", "jpeg", "png", "webp", "gif") -> imgBytes += len
-                        ext in listOf("mp4", "mkv", "avi", "mov") -> vidBytes += len
-                        ext in listOf("mp3", "wav", "m4a", "ogg") -> audBytes += len
-                        ext in listOf("pdf", "doc", "docx", "txt", "md", "json", "xml") -> docBytes += len
-                    }
-                }
-            }
-        }
+        val imgBytes = queryMediaStoreSumSize(MediaStore.Images.Media.EXTERNAL_CONTENT_URI) +
+                sumFileSizeInDir(baseWorkingDir, setOf("jpg", "jpeg", "png", "webp", "gif"))
+        val vidBytes = queryMediaStoreSumSize(MediaStore.Video.Media.EXTERNAL_CONTENT_URI) +
+                sumFileSizeInDir(baseWorkingDir, setOf("mp4", "mkv", "avi", "mov"))
+        val audBytes = queryMediaStoreSumSize(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI) +
+                sumFileSizeInDir(baseWorkingDir, setOf("mp3", "wav", "m4a", "ogg"))
+        val docBytes = sumFileSizeInDir(File(baseWorkingDir, "Documents"), null) +
+                sumFileSizeInDir(File(rootPath, "Documents"), null)
 
         val other = (used - (imgBytes + vidBytes + audBytes + docBytes)).coerceAtLeast(0L)
 
@@ -762,18 +1495,74 @@ class FileRepository(private val context: Context) {
         )
     }
 
+    private fun queryMediaStoreCount(uri: Uri): Int {
+        return try {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)?.use {
+                it.count
+            } ?: 0
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun queryMediaStoreSumSize(uri: Uri): Long {
+        var sum = 0L
+        try {
+            context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.SIZE), null, null, null)?.use { cursor ->
+                val sizeCol = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                if (sizeCol != -1) {
+                    while (cursor.moveToNext()) {
+                        sum += cursor.getLong(sizeCol)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+        return sum
+    }
+
+    private fun countFilesWithExtensions(dir: File, exts: Set<String>): Int {
+        if (!dir.exists()) return 0
+        var count = 0
+        dir.walkTopDown().maxDepth(3).forEach { f ->
+            if (f.isFile && f.extension.lowercase() in exts) count++
+        }
+        return count
+    }
+
+    private fun sumFileSizeInDir(dir: File, exts: Set<String>?): Long {
+        if (!dir.exists()) return 0L
+        var sum = 0L
+        dir.walkTopDown().maxDepth(3).forEach { f ->
+            if (f.isFile && (exts == null || f.extension.lowercase() in exts)) {
+                sum += f.length()
+            }
+        }
+        return sum
+    }
+
     // CRUD & File Operations
     suspend fun createFolder(parentPath: String, name: String): Boolean = withContext(Dispatchers.IO) {
         val dir = File(parentPath, name)
-        if (!dir.exists()) dir.mkdirs() else false
+        val created = if (!dir.exists()) dir.mkdirs() else false
+        if (created) {
+            invalidateFolderCache(parentPath)
+            indexFileOrDir(dir)
+        }
+        created
     }
 
     suspend fun createTextFile(parentPath: String, name: String, content: String = ""): Boolean = withContext(Dispatchers.IO) {
         val file = File(parentPath, name)
         if (!file.exists()) {
-            file.createNewFile()
+            val created = file.createNewFile()
             if (content.isNotEmpty()) {
                 file.writeText(content)
+            }
+            if (created) {
+                invalidateFolderCache(parentPath)
+                indexFileOrDir(file)
             }
             true
         } else false
@@ -782,25 +1571,44 @@ class FileRepository(private val context: Context) {
     suspend fun renameFile(oldPath: String, newName: String): Boolean = withContext(Dispatchers.IO) {
         val oldFile = File(oldPath)
         if (!oldFile.exists()) return@withContext false
+        val parent = oldFile.parent ?: ""
         val newFile = File(oldFile.parentFile, newName)
-        oldFile.renameTo(newFile)
+        val isDir = oldFile.isDirectory
+        val renamed = oldFile.renameTo(newFile)
+        if (renamed) {
+            invalidateFolderCache(parent)
+            removeIndexedPath(oldPath, isDir)
+            indexFileOrDir(newFile)
+            if (isDir) {
+                val batch = mutableListOf<IndexedFileEntity>()
+                scanDirForIndexing(newFile, batch, 4, 0) {}
+                if (batch.isNotEmpty()) {
+                    fileIndexDao.insertAll(batch)
+                }
+            }
+        }
+        renamed
     }
 
     suspend fun deleteFile(path: String, toTrash: Boolean): Boolean = withContext(Dispatchers.IO) {
         val file = File(path)
         if (!file.exists()) return@withContext false
+        val parent = file.parent ?: ""
+        val isDir = file.isDirectory
 
         if (toTrash) {
             val trashDir = File(baseWorkingDir, ".trash").apply { mkdirs() }
             val targetTrashFile = File(trashDir, "${System.currentTimeMillis()}_${file.name}")
             val success = file.renameTo(targetTrashFile)
             if (success) {
+                invalidateFolderCache(parent)
+                removeIndexedPath(path, isDir)
                 trashDao.insertTrash(
                     TrashEntity(
                         originalPath = path,
                         trashPath = targetTrashFile.absolutePath,
                         name = file.name,
-                        isDirectory = file.isDirectory,
+                        isDirectory = isDir,
                         size = targetTrashFile.length(),
                         mimeType = inferMime(file.extension)
                     )
@@ -808,7 +1616,12 @@ class FileRepository(private val context: Context) {
             }
             success
         } else {
-            if (file.isDirectory) file.deleteRecursively() else file.delete()
+            val deleted = if (file.isDirectory) file.deleteRecursively() else file.delete()
+            if (deleted) {
+                invalidateFolderCache(parent)
+                removeIndexedPath(path, isDir)
+            }
+            deleted
         }
     }
 
@@ -823,6 +1636,8 @@ class FileRepository(private val context: Context) {
 
         if (success) {
             trashDao.deleteTrashById(trashEntity.id)
+            origFile.parent?.let { invalidateFolderCache(it) }
+            indexFileOrDir(origFile)
         }
         success
     }
@@ -854,6 +1669,13 @@ class FileRepository(private val context: Context) {
             } else {
                 src.copyTo(dest, overwrite = true)
             }
+            invalidateFolderCache(targetDir)
+            indexFileOrDir(dest)
+            if (dest.isDirectory) {
+                val batch = mutableListOf<IndexedFileEntity>()
+                scanDirForIndexing(dest, batch, 4, 0) {}
+                if (batch.isNotEmpty()) fileIndexDao.insertAll(batch)
+            }
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -865,6 +1687,8 @@ class FileRepository(private val context: Context) {
         val src = File(sourcePath)
         val dest = File(targetDir, src.name)
         if (!src.exists()) return@withContext false
+        val parent = src.parent ?: ""
+        val isDir = src.isDirectory
 
         try {
             val moved = src.renameTo(dest)
@@ -878,12 +1702,22 @@ class FileRepository(private val context: Context) {
                     src.delete()
                 }
             }
+            invalidateFolderCache(parent)
+            invalidateFolderCache(targetDir)
+            removeIndexedPath(sourcePath, isDir)
+            indexFileOrDir(dest)
+            if (dest.isDirectory) {
+                val batch = mutableListOf<IndexedFileEntity>()
+                scanDirForIndexing(dest, batch, 4, 0) {}
+                if (batch.isNotEmpty()) fileIndexDao.insertAll(batch)
+            }
             true
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
     }
+
 
     suspend fun zipFiles(sourcePaths: List<String>, targetZipPath: String): Boolean = withContext(Dispatchers.IO) {
         val zipFile = File(targetZipPath)
@@ -894,6 +1728,8 @@ class FileRepository(private val context: Context) {
                     addToZip(file, file.name, zos)
                 }
             }
+            indexFileOrDir(zipFile)
+            zipFile.parent?.let { invalidateFolderCache(it) }
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -954,6 +1790,10 @@ class FileRepository(private val context: Context) {
                     entry = zis.nextEntry
                 }
             }
+            val batch = mutableListOf<IndexedFileEntity>()
+            scanDirForIndexing(target, batch, 4, 0) {}
+            if (batch.isNotEmpty()) fileIndexDao.insertAll(batch)
+            invalidateFolderCache(destDir)
             true
         } catch (e: Exception) {
             e.printStackTrace()

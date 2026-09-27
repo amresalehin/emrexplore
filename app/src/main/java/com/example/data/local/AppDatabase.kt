@@ -10,9 +10,12 @@ import androidx.room.RoomDatabase
         FavoriteEntity::class,
         TrashEntity::class,
         RecentEntity::class,
-        BookmarkEntity::class
+        BookmarkEntity::class,
+        IndexedFileEntity::class,
+        ExplorerPreferencesEntity::class,
+        IndexStatusEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -20,6 +23,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun trashDao(): TrashDao
     abstract fun recentDao(): RecentDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun fileIndexDao(): FileIndexDao
+    abstract fun preferencesDao(): PreferencesDao
+    abstract fun indexStatusDao(): IndexStatusDao
 
     companion object {
         @Volatile

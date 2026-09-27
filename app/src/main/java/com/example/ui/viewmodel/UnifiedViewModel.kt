@@ -4,7 +4,9 @@ import android.app.Application
 import android.media.MediaPlayer
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.local.ExplorerPreferencesEntity
 import com.example.data.local.FavoriteEntity
+import com.example.data.local.IndexStatusEntity
 import com.example.data.local.RecentEntity
 import com.example.data.local.TrashEntity
 import com.example.data.model.CategoryType
@@ -61,6 +63,19 @@ data class UiState(
     val selectedPaths: Set<String> = emptySet(),
     val clipboard: ClipboardState? = null,
     val isLoadingFiles: Boolean = false,
+    val isLoadingNextPage: Boolean = false,
+    val hasMorePages: Boolean = false,
+    val currentPage: Int = 0,
+    val totalFilesInFolder: Int = 0,
+
+    // Explorer Preferences & Room Indexing
+    val explorerPreferences: ExplorerPreferencesEntity = ExplorerPreferencesEntity(),
+    val isIndexing: Boolean = false,
+    val indexedCount: Int = 0,
+    val lastIndexedTimestamp: Long = 0L,
+    val indexStatusMessage: String = "Ready",
+    val isFastSearchRoomPowered: Boolean = true,
+    val showPreferencesDialog: Boolean = false,
 
     // Gallery
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
@@ -118,19 +133,62 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private var mediaPlayer: MediaPlayer? = null
     private var audioProgressJob: Job? = null
     private var homeSearchJob: Job? = null
+    private var loadFilesJob: Job? = null
 
     init {
         viewModelScope.launch {
-            repository.initializeSampleDataIfNeeded()
-            val initialPath = repository.rootPath
+            val prefs = repository.getPreferences()
+            val initialPath = if (prefs.rememberLastDirectory && prefs.lastDirectoryPath.isNotBlank() && File(prefs.lastDirectoryPath).exists()) {
+                prefs.lastDirectoryPath
+            } else if (prefs.defaultStartupPath.isNotBlank() && File(prefs.defaultStartupPath).exists()) {
+                prefs.defaultStartupPath
+            } else {
+                repository.rootPath
+            }
             _uiState.update { it.copy(currentPath = initialPath) }
+            // Fast loading of initial folder
             loadFiles(initialPath)
-            loadMedia()
             loadStorageStats()
             calculateCategoryCounts()
+
+            // Asynchronous sample seeding and indexing in background
+            launch(Dispatchers.IO) {
+                repository.initializeSampleDataIfNeeded()
+                if (prefs.autoIndexOnStart && repository.totalIndexedCount() == 0) {
+                    repository.indexStorage(force = false)
+                }
+            }
         }
 
         // Collect Room Database Flows
+        viewModelScope.launch {
+            repository.preferencesFlow.collectLatest { prefs ->
+                _uiState.update { current ->
+                    val viewModeEnum = try { ViewMode.valueOf(prefs.viewMode) } catch (e: Exception) { ViewMode.DETAILED_LIST }
+                    val sortOptionEnum = try { SortOption.valueOf(prefs.sortOption) } catch (e: Exception) { SortOption.NAME_ASC }
+                    current.copy(
+                        explorerPreferences = prefs,
+                        viewMode = viewModeEnum,
+                        sortOption = sortOptionEnum,
+                        showHidden = prefs.showHidden,
+                        galleryColumns = prefs.galleryColumns,
+                        isFastSearchRoomPowered = prefs.enableFastRoomSearch
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            repository.indexStatusFlow.collectLatest { status ->
+                _uiState.update { current ->
+                    current.copy(
+                        isIndexing = status.isIndexing,
+                        lastIndexedTimestamp = status.lastIndexedTimestamp,
+                        indexedCount = status.totalIndexedCount,
+                        indexStatusMessage = status.statusMessage
+                    )
+                }
+            }
+        }
         viewModelScope.launch {
             repository.favoritesFlow.collectLatest { favs ->
                 _uiState.update { it.copy(favoritesList = favs) }
@@ -148,6 +206,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+
     fun setTab(tab: MainTab) {
         _uiState.update { it.copy(currentTab = tab) }
         when (tab) {
@@ -155,25 +214,113 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 loadStorageStats()
                 calculateCategoryCounts()
             }
-            MainTab.FILES -> loadFiles(_uiState.value.currentPath)
-            MainTab.GALLERY -> loadMedia()
+            MainTab.FILES -> {
+                if (_uiState.value.files.isEmpty()) {
+                    loadFiles(_uiState.value.currentPath)
+                }
+            }
+            MainTab.GALLERY -> {
+                // Lazy load media when Gallery tab is opened
+                if (_uiState.value.mediaItems.isEmpty()) {
+                    loadMedia()
+                }
+            }
         }
     }
 
     // --- File Explorer Actions ---
 
     fun navigateToDirectory(path: String) {
-        val file = File(path)
-        if (file.exists() && file.isDirectory) {
+        if (path == _uiState.value.currentPath && _uiState.value.files.isNotEmpty()) return
+
+        loadFilesJob?.cancel()
+
+        _uiState.update {
+            it.copy(
+                currentPath = path,
+                searchQuery = "",
+                isSelectionMode = false,
+                selectedPaths = emptySet(),
+                currentPage = 0,
+                hasMorePages = false,
+                totalFilesInFolder = 0,
+                isLoadingFiles = true,
+                isLoadingNextPage = false
+            )
+        }
+
+        loadFilesJob = viewModelScope.launch {
+            // STEP 1: Quick check if cached items exist in memory or Room DB
+            val cached = repository.getCachedFiles(path, _uiState.value.showHidden)
+            if (!cached.isNullOrEmpty()) {
+                val sorted = sortFiles(cached, _uiState.value.sortOption)
+                val initialPage = sorted.take(40)
+                _uiState.update {
+                    it.copy(
+                        files = initialPage,
+                        currentPage = 0,
+                        totalFilesInFolder = sorted.size,
+                        hasMorePages = sorted.size > initialPage.size,
+                        isLoadingFiles = false
+                    )
+                }
+            }
+
+            // STEP 2: Fetch Page 0 lazily via repository.getFilesPaged (pageSize = 40)
+            val pagedResult = repository.getFilesPaged(
+                dirPath = path,
+                page = 0,
+                pageSize = 40,
+                sortOption = _uiState.value.sortOption,
+                showHidden = _uiState.value.showHidden
+            )
+
             _uiState.update {
                 it.copy(
-                    currentPath = path,
-                    searchQuery = "",
-                    isSelectionMode = false,
-                    selectedPaths = emptySet()
+                    files = pagedResult.items,
+                    currentPage = 0,
+                    totalFilesInFolder = pagedResult.totalCount,
+                    hasMorePages = pagedResult.hasMore,
+                    isLoadingFiles = false
                 )
             }
-            loadFiles(path)
+
+            if (_uiState.value.explorerPreferences.rememberLastDirectory) {
+                repository.updateLastPath(path)
+            }
+        }
+    }
+
+    fun loadNextPage() {
+        val state = _uiState.value
+        if (state.isLoadingNextPage || !state.hasMorePages || state.isLoadingFiles) return
+
+        val nextPage = state.currentPage + 1
+        _uiState.update { it.copy(isLoadingNextPage = true) }
+
+        viewModelScope.launch {
+            val result = repository.getFilesPaged(
+                dirPath = state.currentPath,
+                page = nextPage,
+                pageSize = 40,
+                sortOption = state.sortOption,
+                showHidden = state.showHidden
+            )
+
+            _uiState.update { current ->
+                if (current.currentPath == state.currentPath) {
+                    val combined = (current.files + result.items).distinctBy { it.path }
+                    current.copy(
+                        files = combined,
+                        currentPage = nextPage,
+                        totalFilesInFolder = result.totalCount,
+                        hasMorePages = result.hasMore,
+                        isLoadingNextPage = false
+                    )
+                } else {
+                    current.copy(isLoadingNextPage = false)
+                }
+            }
         }
     }
 
@@ -187,13 +334,26 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun loadFiles(path: String = _uiState.value.currentPath) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingFiles = true) }
-            val items = repository.getFiles(path, _uiState.value.showHidden)
-            val sorted = sortFiles(items, _uiState.value.sortOption)
+        loadFilesJob?.cancel()
+        loadFilesJob = viewModelScope.launch {
+            if (_uiState.value.files.isEmpty()) {
+                _uiState.update { it.copy(isLoadingFiles = true) }
+            }
+
+            val result = repository.getFilesPaged(
+                dirPath = path,
+                page = 0,
+                pageSize = 40,
+                sortOption = _uiState.value.sortOption,
+                showHidden = _uiState.value.showHidden
+            )
+
             _uiState.update {
                 it.copy(
-                    files = sorted,
+                    files = result.items,
+                    currentPage = 0,
+                    totalFilesInFolder = result.totalCount,
+                    hasMorePages = result.hasMore,
                     isLoadingFiles = false
                 )
             }
@@ -205,16 +365,77 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val sorted = sortFiles(state.files, option)
             state.copy(sortOption = option, files = sorted)
         }
+        viewModelScope.launch {
+            repository.updateSortOption(option)
+            loadFiles()
+        }
     }
 
     fun setViewMode(mode: ViewMode) {
         _uiState.update { it.copy(viewMode = mode) }
+        viewModelScope.launch {
+            repository.updateViewMode(mode)
+        }
     }
 
     fun toggleShowHidden() {
         val newVal = !_uiState.value.showHidden
         _uiState.update { it.copy(showHidden = newVal) }
+        viewModelScope.launch {
+            repository.updateShowHidden(newVal)
+        }
         loadFiles()
+    }
+
+    fun setShowPreferencesDialog(show: Boolean) {
+        _uiState.update { it.copy(showPreferencesDialog = show) }
+    }
+
+    fun saveExplorerPreferences(prefs: ExplorerPreferencesEntity) {
+        viewModelScope.launch {
+            repository.savePreferences(prefs)
+            showMessage("Preferences saved to Room database")
+        }
+    }
+
+    fun toggleFastSearch() {
+        val nextVal = !_uiState.value.isFastSearchRoomPowered
+        viewModelScope.launch {
+            repository.updateFastSearch(nextVal)
+            showMessage(if (nextVal) "Room database search enabled" else "Live disk search enabled")
+        }
+    }
+
+    fun toggleRememberLastDirectory() {
+        val nextVal = !_uiState.value.explorerPreferences.rememberLastDirectory
+        viewModelScope.launch {
+            repository.updateRememberLastDir(nextVal)
+        }
+    }
+
+    fun reindexStorage(force: Boolean = true) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isIndexing = true, indexStatusMessage = "Indexing storage...") }
+            val count = repository.indexStorage(force)
+            _uiState.update {
+                it.copy(
+                    isIndexing = false,
+                    indexedCount = count,
+                    lastIndexedTimestamp = System.currentTimeMillis(),
+                    indexStatusMessage = "Indexed $count items"
+                )
+            }
+            showMessage("Room indexed $count files and folders")
+            calculateCategoryCounts()
+        }
+    }
+
+    fun resetPreferences() {
+        viewModelScope.launch {
+            repository.resetPreferences()
+            showMessage("Preferences reset to defaults")
+            loadFiles()
+        }
     }
 
     fun setSearchQuery(query: String) {
@@ -494,7 +715,11 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGalleryColumns(cols: Int) {
-        _uiState.update { it.copy(galleryColumns = cols.coerceIn(2, 4)) }
+        val clamped = cols.coerceIn(2, 4)
+        _uiState.update { it.copy(galleryColumns = clamped) }
+        viewModelScope.launch {
+            repository.updateGalleryColumns(clamped)
+        }
     }
 
     fun loadMedia() {
@@ -560,10 +785,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     private fun calculateCategoryCounts() {
         viewModelScope.launch {
-            val counts = mutableMapOf<CategoryType, Int>()
-            for (cat in CategoryType.entries) {
-                counts[cat] = repository.getFilesByCategory(cat).size
-            }
+            val counts = repository.getCategoryCounts()
             _uiState.update { it.copy(categoryCounts = counts) }
         }
     }

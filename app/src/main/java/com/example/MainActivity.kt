@@ -62,6 +62,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Configure Coil ImageLoader for high-performance lazy loading
+        val imageLoader = coil.ImageLoader.Builder(this)
+            .memoryCache {
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizePercent(0.25)
+                    .build()
+            }
+            .diskCache {
+                coil.disk.DiskCache.Builder()
+                    .directory(cacheDir.resolve("image_cache"))
+                    .maxSizePercent(0.05)
+                    .build()
+            }
+            .crossfade(true)
+            .build()
+        coil.Coil.setImageLoader(imageLoader)
+
         setContent {
             FossifyTheme {
                 MainAppRoot(viewModel = viewModel)
@@ -89,22 +106,17 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
         }
     }
 
-    // Auto-prompt permissions on initial start
+    // Auto-prompt permissions on initial start if not granted
     LaunchedEffect(Unit) {
         if (!storagePermissionsState.allPermissionsGranted) {
             storagePermissionsState.launchMultiplePermissionRequest()
-        } else {
-            viewModel.loadFiles()
-            viewModel.loadMedia()
-            viewModel.loadStorageStats()
         }
     }
 
-    // Reactively refresh data when permissions are granted
+    // Reactively refresh data when permissions are newly granted
     LaunchedEffect(storagePermissionsState.allPermissionsGranted) {
-        if (storagePermissionsState.allPermissionsGranted) {
+        if (storagePermissionsState.allPermissionsGranted && uiState.files.isEmpty()) {
             viewModel.loadFiles()
-            viewModel.loadMedia()
             viewModel.loadStorageStats()
         }
     }

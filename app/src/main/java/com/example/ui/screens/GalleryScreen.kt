@@ -45,7 +45,16 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.platform.LocalContext
+import coil.request.ImageRequest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -233,14 +242,33 @@ private fun MediaGrid(
     columns: Int,
     onItemClick: (MediaItem) -> Unit
 ) {
+    val gridState = rememberLazyGridState()
+    var displayLimit by remember(items) { mutableIntStateOf(minOf(60, items.size)) }
+
+    // Lazy load next batch as user scrolls near bottom
+    LaunchedEffect(gridState, items.size) {
+        snapshotFlow {
+            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = gridState.layoutInfo.totalItemsCount
+            lastVisible >= total - 12
+        }.collect { nearEnd ->
+            if (nearEnd && displayLimit < items.size) {
+                displayLimit = minOf(displayLimit + 48, items.size)
+            }
+        }
+    }
+
+    val visibleItems = remember(items, displayLimit) { items.take(displayLimit) }
+
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxSize()
     ) {
-        items(items, key = { it.path }) { item ->
+        items(visibleItems, key = { it.path }) { item ->
             MediaGridThumbnail(
                 item = item,
                 onClick = { onItemClick(item) }
@@ -254,6 +282,15 @@ private fun MediaGridThumbnail(
     item: MediaItem,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val imageRequest = remember(item.uri) {
+        ImageRequest.Builder(context)
+            .data(item.uri)
+            .size(280, 280)
+            .crossfade(true)
+            .build()
+    }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -262,7 +299,7 @@ private fun MediaGridThumbnail(
             .clickable(onClick = onClick)
     ) {
         AsyncImage(
-            model = item.uri,
+            model = imageRequest,
             contentDescription = item.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()

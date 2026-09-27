@@ -19,8 +19,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import coil.request.ImageRequest
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -50,6 +57,8 @@ import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -63,6 +72,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -124,6 +134,7 @@ fun FileExplorerScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var showOptionsMenu by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
+    var activeMenuItem by remember { mutableStateOf<FileItem?>(null) }
 
     // Intercept hardware back button when inside a subfolder
     BackHandler(enabled = uiState.currentPath != "/" && !uiState.isSelectionMode) {
@@ -313,6 +324,14 @@ fun FileExplorerScreen(
                                                 showOptionsMenu = false
                                             }
                                         )
+                                        DropdownMenuItem(
+                                            text = { Text("Explorer Preferences") },
+                                            leadingIcon = { Icon(Icons.Default.Tune, contentDescription = null) },
+                                            onClick = {
+                                                viewModel.setShowPreferencesDialog(true)
+                                                showOptionsMenu = false
+                                            }
+                                        )
                                     }
                                 }
                             }
@@ -323,6 +342,63 @@ fun FileExplorerScreen(
                             currentPath = uiState.currentPath,
                             onNavigate = { path -> viewModel.navigateToDirectory(path) }
                         )
+
+                        // Paging / item count status banner
+                        if (uiState.totalFilesInFolder > 40 && uiState.searchQuery.isBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (uiState.hasMorePages) "Loaded ${uiState.files.size} of ${uiState.totalFilesInFolder} items" else "${uiState.files.size} items",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (uiState.hasMorePages) {
+                                    Text(
+                                        text = "Scroll for more",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+
+                        if (uiState.searchQuery.isNotBlank()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Storage,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (uiState.isFastSearchRoomPowered) "Room Indexed Search" else "Folder Search",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -334,7 +410,7 @@ fun FileExplorerScreen(
                 uiState.files.filter { it.name.contains(uiState.searchQuery, ignoreCase = true) }
             }
 
-            if (uiState.isLoadingFiles) {
+            if (uiState.isLoadingFiles && displayFiles.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -371,9 +447,34 @@ fun FileExplorerScreen(
                     }
                 }
             } else {
+                if (uiState.isLoadingFiles) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(3.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+
                 // Content based on ViewMode
                 if (uiState.viewMode == ViewMode.GRID) {
+                    val gridState = rememberLazyGridState()
+
+                    LaunchedEffect(gridState, displayFiles.size, uiState.hasMorePages) {
+                        snapshotFlow {
+                            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            val total = gridState.layoutInfo.totalItemsCount
+                            last >= total - 8
+                        }.collect { nearEnd ->
+                            if (nearEnd && uiState.hasMorePages && !uiState.isLoadingNextPage && uiState.searchQuery.isBlank()) {
+                                viewModel.loadNextPage()
+                            }
+                        }
+                    }
+
                     LazyVerticalGrid(
+                        state = gridState,
                         columns = GridCells.Fixed(3),
                         contentPadding = PaddingValues(8.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -405,16 +506,57 @@ fun FileExplorerScreen(
                                 }
                             )
                         }
+
+                        if (uiState.isLoadingNextPage) {
+                            item(span = { GridItemSpan(3) }) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = "Loading more (${displayFiles.size} of ${uiState.totalFilesInFolder})...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
+                    val listState = rememberLazyListState()
+
+                    LaunchedEffect(listState, displayFiles.size, uiState.hasMorePages) {
+                        snapshotFlow {
+                            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            val total = listState.layoutInfo.totalItemsCount
+                            last >= total - 6
+                        }.collect { nearEnd ->
+                            if (nearEnd && uiState.hasMorePages && !uiState.isLoadingNextPage && uiState.searchQuery.isBlank()) {
+                                viewModel.loadNextPage()
+                            }
+                        }
+                    }
+
                     LazyColumn(
+                        state = listState,
                         contentPadding = PaddingValues(vertical = 4.dp, horizontal = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(displayFiles, key = { it.path }) { item ->
                             val isSelected = uiState.selectedPaths.contains(item.path)
-                            var itemMenuExpanded by remember { mutableStateOf(false) }
 
                             FileListItem(
                                 item = item,
@@ -438,102 +580,131 @@ fun FileExplorerScreen(
                                     }
                                     viewModel.toggleItemSelection(item.path)
                                 },
-                                onMoreClick = { itemMenuExpanded = true }
+                                onMoreClick = { activeMenuItem = item }
                             )
+                        }
 
-                            // Context dropdown menu for item
-                            DropdownMenu(
-                                expanded = itemMenuExpanded,
-                                onDismissRequest = { itemMenuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Open") },
-                                    onClick = {
-                                        itemMenuExpanded = false
-                                        if (item.isDirectory) {
-                                            viewModel.navigateToDirectory(item.path)
-                                        } else {
-                                            viewModel.openFile(item)
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text(if (item.isFavorite) "Remove Favorite" else "Add to Favorites") },
-                                    leadingIcon = {
-                                        Icon(
-                                            if (item.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
-                                            contentDescription = null
+                        if (uiState.isLoadingNextPage) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
-                                    },
-                                    onClick = {
-                                        viewModel.toggleFavorite(item)
-                                        itemMenuExpanded = false
+                                        Text(
+                                            text = "Loading more (${displayFiles.size} of ${uiState.totalFilesInFolder})...",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Rename") },
-                                    leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null) },
-                                    onClick = {
-                                        renameTargetItem = item
-                                        renameNewName = item.name
-                                        showRenameDialog = true
-                                        itemMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Copy") },
-                                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
-                                    onClick = {
-                                        viewModel.toggleItemSelection(item.path)
-                                        viewModel.copySelected()
-                                        itemMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Cut / Move") },
-                                    leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null) },
-                                    onClick = {
-                                        viewModel.toggleItemSelection(item.path)
-                                        viewModel.cutSelected()
-                                        itemMenuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Properties") },
-                                    leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
-                                    onClick = {
-                                        viewModel.openProperties(item)
-                                        itemMenuExpanded = false
-                                    }
-                                )
-                                if (!item.isDirectory) {
-                                    DropdownMenuItem(
-                                        text = { Text("Share") },
-                                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
-                                        onClick = {
-                                            try {
-                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                    type = item.mimeType
-                                                    putExtra(Intent.EXTRA_STREAM, item.uri)
-                                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                                }
-                                                context.startActivity(Intent.createChooser(shareIntent, "Share File"))
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                            }
-                                            itemMenuExpanded = false
-                                        }
-                                    )
                                 }
+                            }
+                        }
+                    }
+
+                    // Hoisted single context dropdown menu for items
+                    DropdownMenu(
+                        expanded = activeMenuItem != null,
+                        onDismissRequest = { activeMenuItem = null }
+                    ) {
+                        activeMenuItem?.let { item ->
+                            DropdownMenuItem(
+                                text = { Text("Open") },
+                                onClick = {
+                                    activeMenuItem = null
+                                    if (item.isDirectory) {
+                                        viewModel.navigateToDirectory(item.path)
+                                    } else {
+                                        viewModel.openFile(item)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(if (item.isFavorite) "Remove Favorite" else "Add to Favorites") },
+                                leadingIcon = {
+                                    Icon(
+                                        if (item.isFavorite) Icons.Default.Star else Icons.Default.StarBorder,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    viewModel.toggleFavorite(item)
+                                    activeMenuItem = null
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null) },
+                                onClick = {
+                                    renameTargetItem = item
+                                    renameNewName = item.name
+                                    showRenameDialog = true
+                                    activeMenuItem = null
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy") },
+                                leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                                onClick = {
+                                    viewModel.toggleItemSelection(item.path)
+                                    viewModel.copySelected()
+                                    activeMenuItem = null
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Cut / Move") },
+                                leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null) },
+                                onClick = {
+                                    viewModel.toggleItemSelection(item.path)
+                                    viewModel.cutSelected()
+                                    activeMenuItem = null
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Properties") },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                                onClick = {
+                                    viewModel.openProperties(item)
+                                    activeMenuItem = null
+                                }
+                            )
+                            if (!item.isDirectory) {
                                 DropdownMenuItem(
-                                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                    text = { Text("Share") },
+                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                                     onClick = {
-                                        viewModel.deleteFile(item.path, toTrash = true)
-                                        itemMenuExpanded = false
+                                        try {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = item.mimeType
+                                                putExtra(Intent.EXTRA_STREAM, item.uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share File"))
+                                        } catch (e: Exception) {
+                                            e.printStackTrace()
+                                        }
+                                        activeMenuItem = null
                                     }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    viewModel.deleteFile(item.path, toTrash = true)
+                                    activeMenuItem = null
+                                }
+                            )
                         }
                     }
                 }
@@ -725,6 +896,15 @@ fun FileExplorerScreen(
             }
         )
     }
+
+    // Dialog: Explorer Preferences (Persistent in Room)
+    if (uiState.showPreferencesDialog) {
+        ExplorerPreferencesDialog(
+            uiState = uiState,
+            viewModel = viewModel,
+            onDismiss = { viewModel.setShowPreferencesDialog(false) }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -770,18 +950,7 @@ private fun FileListItem(
                 Spacer(modifier = Modifier.width(8.dp))
             }
 
-            if (item.isImage && item.uri != null) {
-                AsyncImage(
-                    model = item.uri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(if (isCompact) 36.dp else 44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                )
-            } else {
-                FileTypeIconBadge(item = item, modifier = Modifier.size(if (isCompact) 36.dp else 44.dp))
-            }
+            FileTypeIconBadge(item = item, modifier = Modifier.size(if (isCompact) 36.dp else 44.dp))
 
             Spacer(modifier = Modifier.width(12.dp))
 
@@ -884,8 +1053,16 @@ private fun FileGridCard(
                 contentAlignment = Alignment.Center
             ) {
                 if (item.isImage && item.uri != null) {
+                    val context = LocalContext.current
+                    val thumbRequest = remember(item.uri) {
+                        ImageRequest.Builder(context)
+                            .data(item.uri)
+                            .size(220, 220)
+                            .crossfade(true)
+                            .build()
+                    }
                     AsyncImage(
-                        model = item.uri,
+                        model = thumbRequest,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,7 +31,8 @@ import com.example.ui.components.formatFileSize
 @Composable
 fun FilePropertiesDialog(
     item: FileItem,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onInspectMetadata: ((FileItem) -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -62,6 +65,21 @@ fun FilePropertiesDialog(
                     PropertyRow("Items", "${item.childCount} files & folders")
                 }
                 PropertyRow("Modified", formatDate(item.lastModified))
+
+                if (item.isImage && onInspectMetadata != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onInspectMetadata(item)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Tune, contentDescription = null)
+                        Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+                        Text("Inspect EXIF, IPTC & XMP")
+                    }
+                }
             }
         },
         confirmButton = {

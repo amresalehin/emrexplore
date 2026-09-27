@@ -17,6 +17,9 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
     suspend fun isFavoriteSync(path: String): Boolean
 
+    @Query("SELECT path FROM favorites")
+    suspend fun getAllFavoritePathsSync(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
 
@@ -65,3 +68,115 @@ interface BookmarkDao {
     @Query("DELETE FROM bookmarks WHERE path = :path")
     suspend fun removeBookmark(path: String)
 }
+
+data class CategoryStatTuple(
+    val category: String,
+    val count: Int,
+    val totalSize: Long?
+)
+
+@Dao
+interface FileIndexDao {
+    @Query("SELECT * FROM indexed_files ORDER BY lastModified DESC LIMIT 100")
+    fun getAllIndexedFiles(): Flow<List<IndexedFileEntity>>
+
+    @Query("SELECT * FROM indexed_files WHERE name LIKE '%' || :query || '%' ORDER BY isDirectory DESC, name ASC LIMIT :limit")
+    suspend fun searchFiles(query: String, limit: Int = 100): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE category = :category AND name LIKE '%' || :query || '%' ORDER BY isDirectory DESC, name ASC LIMIT :limit")
+    suspend fun searchFilesByCategory(query: String, category: String, limit: Int = 100): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE category = :category ORDER BY lastModified DESC LIMIT :limit")
+    suspend fun getFilesByCategory(category: String, limit: Int = 300): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE category = :category ORDER BY lastModified DESC")
+    fun getFilesByCategoryFlow(category: String): Flow<List<IndexedFileEntity>>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath ORDER BY isDirectory DESC, name ASC")
+    suspend fun getFilesByParent(parentPath: String): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath ORDER BY isDirectory DESC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentPaged(parentPath: String, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT COUNT(*) FROM indexed_files WHERE parentPath = :parentPath")
+    suspend fun getCountByParent(parentPath: String): Int
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath ORDER BY isDirectory DESC, name ASC")
+    fun getFilesByParentFlow(parentPath: String): Flow<List<IndexedFileEntity>>
+
+    @Query("SELECT COUNT(*) FROM indexed_files")
+    fun getTotalCountFlow(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM indexed_files")
+    suspend fun getTotalCount(): Int
+
+    @Query("SELECT COUNT(*) FROM indexed_files WHERE category = :category")
+    suspend fun getCountByCategory(category: String): Int
+
+    @Query("SELECT category, COUNT(*) as count, SUM(size) as totalSize FROM indexed_files WHERE isDirectory = 0 GROUP BY category")
+    fun getCategoryStatsFlow(): Flow<List<CategoryStatTuple>>
+
+    @Query("SELECT category, COUNT(*) as count, SUM(size) as totalSize FROM indexed_files WHERE isDirectory = 0 GROUP BY category")
+    suspend fun getCategoryStats(): List<CategoryStatTuple>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(file: IndexedFileEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(files: List<IndexedFileEntity>)
+
+    @Query("DELETE FROM indexed_files WHERE path = :path")
+    suspend fun deleteByPath(path: String)
+
+    @Query("DELETE FROM indexed_files WHERE path = :path OR path LIKE :pathPrefix || '/%'")
+    suspend fun deleteByPathTree(path: String, pathPrefix: String)
+
+    @Query("DELETE FROM indexed_files")
+    suspend fun clearIndex()
+}
+
+@Dao
+interface PreferencesDao {
+    @Query("SELECT * FROM explorer_preferences WHERE id = 1")
+    fun getPreferencesFlow(): Flow<ExplorerPreferencesEntity?>
+
+    @Query("SELECT * FROM explorer_preferences WHERE id = 1")
+    suspend fun getPreferences(): ExplorerPreferencesEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun savePreferences(prefs: ExplorerPreferencesEntity)
+
+    @Query("UPDATE explorer_preferences SET viewMode = :viewMode WHERE id = 1")
+    suspend fun updateViewMode(viewMode: String)
+
+    @Query("UPDATE explorer_preferences SET sortOption = :sortOption WHERE id = 1")
+    suspend fun updateSortOption(sortOption: String)
+
+    @Query("UPDATE explorer_preferences SET showHidden = :showHidden WHERE id = 1")
+    suspend fun updateShowHidden(showHidden: Boolean)
+
+    @Query("UPDATE explorer_preferences SET lastDirectoryPath = :path WHERE id = 1")
+    suspend fun updateLastPath(path: String)
+
+    @Query("UPDATE explorer_preferences SET galleryColumns = :cols WHERE id = 1")
+    suspend fun updateGalleryColumns(cols: Int)
+
+    @Query("UPDATE explorer_preferences SET enableFastRoomSearch = :enable WHERE id = 1")
+    suspend fun updateFastSearch(enable: Boolean)
+
+    @Query("UPDATE explorer_preferences SET rememberLastDirectory = :remember WHERE id = 1")
+    suspend fun updateRememberLastDir(remember: Boolean)
+}
+
+@Dao
+interface IndexStatusDao {
+    @Query("SELECT * FROM index_status WHERE id = 1")
+    fun getStatusFlow(): Flow<IndexStatusEntity?>
+
+    @Query("SELECT * FROM index_status WHERE id = 1")
+    suspend fun getStatus(): IndexStatusEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun updateStatus(status: IndexStatusEntity)
+}
+

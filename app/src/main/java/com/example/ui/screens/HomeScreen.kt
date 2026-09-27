@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Image
@@ -45,6 +46,7 @@ import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VideogameAsset
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -58,17 +60,22 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -227,6 +234,12 @@ fun HomeScreen(
                         }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
+
+                        IconButton(onClick = {
+                            viewModel.setShowPreferencesDialog(true)
+                        }) {
+                            Icon(Icons.Default.Tune, contentDescription = "Explorer Preferences")
+                        }
                     }
 
                     // Prominent Home Tab Search Bar
@@ -353,12 +366,31 @@ fun HomeScreen(
                     )
                 }
             } else {
+                val categoryListState = rememberLazyListState()
+                var categoryDisplayLimit by remember(filteredCategoryFiles) { mutableIntStateOf(minOf(50, filteredCategoryFiles.size)) }
+
+                LaunchedEffect(categoryListState, filteredCategoryFiles.size) {
+                    snapshotFlow {
+                        val last = categoryListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        val total = categoryListState.layoutInfo.totalItemsCount
+                        last >= total - 10
+                    }.collect { nearEnd ->
+                        if (nearEnd && categoryDisplayLimit < filteredCategoryFiles.size) {
+                            categoryDisplayLimit = minOf(categoryDisplayLimit + 40, filteredCategoryFiles.size)
+                        }
+                    }
+                }
+                val visibleCategoryFiles = remember(filteredCategoryFiles, categoryDisplayLimit) {
+                    filteredCategoryFiles.take(categoryDisplayLimit)
+                }
+
                 LazyColumn(
+                    state = categoryListState,
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(filteredCategoryFiles, key = { it.path }) { item ->
+                    items(visibleCategoryFiles, key = { it.path }) { item ->
                         CategoryFileCard(
                             item = item,
                             onClick = { viewModel.openFile(item) }
@@ -419,7 +451,26 @@ fun HomeScreen(
                         }
                     }
                 } else {
+                    val searchListState = rememberLazyListState()
+                    var searchDisplayLimit by remember(uiState.homeSearchResults) { mutableIntStateOf(minOf(30, uiState.homeSearchResults.size)) }
+
+                    LaunchedEffect(searchListState, uiState.homeSearchResults.size) {
+                        snapshotFlow {
+                            val last = searchListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            val total = searchListState.layoutInfo.totalItemsCount
+                            last >= total - 6
+                        }.collect { nearEnd ->
+                            if (nearEnd && searchDisplayLimit < uiState.homeSearchResults.size) {
+                                searchDisplayLimit = minOf(searchDisplayLimit + 30, uiState.homeSearchResults.size)
+                            }
+                        }
+                    }
+                    val visibleSearchResults = remember(uiState.homeSearchResults, searchDisplayLimit) {
+                        uiState.homeSearchResults.take(searchDisplayLimit)
+                    }
+
                     LazyColumn(
+                        state = searchListState,
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxSize()
@@ -444,7 +495,7 @@ fun HomeScreen(
                             }
                         }
 
-                        items(uiState.homeSearchResults, key = { it.path }) { item ->
+                        items(visibleSearchResults, key = { it.path }) { item ->
                             SearchResultCard(
                                 item = item,
                                 onClick = {
@@ -589,24 +640,28 @@ fun HomeScreen(
                         CategoryType.DOWNLOADS to (Icons.Default.Download to ColorDownloads)
                     )
 
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(310.dp),
-                        userScrollEnabled = false
-                    ) {
-                        items(categories) { (cat, visual) ->
-                            val count = uiState.categoryCounts[cat] ?: 0
-                            CategoryCard(
-                                title = cat.displayName,
-                                count = count,
-                                icon = visual.first,
-                                tint = visual.second,
-                                onClick = { viewModel.selectCategory(cat) }
-                            )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        categories.chunked(2).forEach { rowItems ->
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                rowItems.forEach { (cat, visual) ->
+                                    val count = uiState.categoryCounts[cat] ?: 0
+                                    Box(modifier = Modifier.weight(1f)) {
+                                        CategoryCard(
+                                            title = cat.displayName,
+                                            count = count,
+                                            icon = visual.first,
+                                            tint = visual.second,
+                                            onClick = { viewModel.selectCategory(cat) }
+                                        )
+                                    }
+                                }
+                                if (rowItems.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
                         }
                     }
                 }
@@ -820,7 +875,7 @@ fun HomeScreen(
                     }
                 }
 
-                // 6. Preferences & App Info
+                // 6. Preferences & Room Index Status
                 item {
                     Card(
                         shape = RoundedCornerShape(20.dp),
@@ -829,11 +884,33 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(18.dp)) {
-                            Text(
-                                text = "Preferences",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Preferences & Index",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = { viewModel.setShowPreferencesDialog(true) }
+                                ) {
+                                    Text("Preferences")
+                                }
+                            }
                             Spacer(modifier = Modifier.height(12.dp))
 
                             Row(
@@ -856,6 +933,75 @@ fun HomeScreen(
                                     checked = uiState.showHidden,
                                     onCheckedChange = { viewModel.toggleShowHidden() }
                                 )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Fast SQLite Indexed Search",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                    )
+                                    Text(
+                                        text = "Query Room database for sub-millisecond search",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = uiState.isFastSearchRoomPowered,
+                                    onCheckedChange = { viewModel.toggleFastSearch() }
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Local Storage Index Status
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Storage,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Room Index: ${uiState.indexedCount} files",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                        )
+                                        Text(
+                                            text = uiState.indexStatusMessage,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = { viewModel.reindexStorage(force = true) },
+                                    enabled = !uiState.isIndexing,
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (uiState.isIndexing) "Indexing..." else "Re-index")
+                                }
                             }
 
                             Spacer(modifier = Modifier.height(14.dp))
@@ -911,6 +1057,15 @@ fun HomeScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // Dialog: Explorer Preferences (Persistent in Room)
+    if (uiState.showPreferencesDialog) {
+        ExplorerPreferencesDialog(
+            uiState = uiState,
+            viewModel = viewModel,
+            onDismiss = { viewModel.setShowPreferencesDialog(false) }
         )
     }
 }

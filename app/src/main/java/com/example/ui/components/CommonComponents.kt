@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -54,6 +55,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.model.FileItem
 import com.example.ui.theme.ColorApks
 import com.example.ui.theme.ColorArchives
@@ -343,29 +349,54 @@ fun FileTypeIconBadge(
     item: FileItem,
     modifier: Modifier = Modifier
 ) {
-    val (icon, tint) = when {
-        item.isDirectory -> Icons.Default.Folder to ColorFolders
-        item.isImage -> Icons.Default.Image to ColorImages
-        item.isVideo -> Icons.Default.Movie to ColorVideos
-        item.isAudio -> Icons.Default.AudioFile to ColorAudio
-        item.isArchive -> Icons.Default.Archive to ColorArchives
-        item.isApk -> Icons.Default.VideogameAsset to ColorApks
-        item.isDocument -> Icons.Default.Description to ColorDocuments
-        else -> Icons.Default.Description to MaterialTheme.colorScheme.primary
-    }
+    if (item.isImage && item.uri != null) {
+        val context = LocalContext.current
+        val imageRequest = remember(item.uri) {
+            ImageRequest.Builder(context)
+                .data(item.uri)
+                .size(128, 128)
+                .crossfade(true)
+                .build()
+        }
+        Box(
+            modifier = modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(ColorImages.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    } else {
+        val (icon, tint) = when {
+            item.isDirectory -> Icons.Default.Folder to ColorFolders
+            item.isImage -> Icons.Default.Image to ColorImages
+            item.isVideo -> Icons.Default.Movie to ColorVideos
+            item.isAudio -> Icons.Default.AudioFile to ColorAudio
+            item.isArchive -> Icons.Default.Archive to ColorArchives
+            item.isApk -> Icons.Default.VideogameAsset to ColorApks
+            item.isDocument -> Icons.Default.Description to ColorDocuments
+            else -> Icons.Default.Description to MaterialTheme.colorScheme.primary
+        }
 
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(tint.copy(alpha = 0.15f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = tint,
-            modifier = Modifier.size(26.dp)
-        )
+        Box(
+            modifier = modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tint.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(26.dp)
+            )
+        }
     }
 }

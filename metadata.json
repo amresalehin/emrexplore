@@ -1,6 +1,6 @@
 {
   "name": "Fossify Files",
-  "description": "Unified file manager and media gallery combining Fossify File Explorer and Gallery into a cohesive, intuitive experience.",
+  "description": "An unified file manager and media gallery combining Fossify File Explorer and Gallery into a cohesive, intuitive experience.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
