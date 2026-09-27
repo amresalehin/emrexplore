@@ -20,7 +20,7 @@ class MediaStorePagingSource(
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
         val offset = params.key ?: 0
-        val limit = params.loadSize.coerceIn(MIN_PAGE_SIZE, MAX_PAGE_SIZE)
+        val limit = params.loadSize.coerceIn(1, MAX_PAGE_SIZE)
         return try {
             val rows = query(offset, limit)
             LoadResult.Page(rows, if (offset == 0) null else (offset - limit).coerceAtLeast(0), if (rows.size < limit) null else offset + rows.size)
