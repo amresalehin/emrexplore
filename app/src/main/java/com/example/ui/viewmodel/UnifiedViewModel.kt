@@ -737,7 +737,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 showMessage("Renamed to '$newName'")
                 loadFiles()
                 refreshGallery()
-                loadMedia(forceRefresh = true)
             } else {
                 showMessage("Failed to rename file")
             }
@@ -751,7 +750,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 showMessage(if (toTrash) "Moved to Recycle Bin" else "Permanently deleted")
                 loadFiles()
                 refreshGallery()
-                loadMedia(forceRefresh = true)
                 loadStorageStats()
             } else {
                 showMessage("Delete failed")
@@ -770,7 +768,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             showMessage(if (toTrash) "Moved $count items to Recycle Bin" else "Deleted $count items")
             loadFiles()
             refreshGallery()
-            loadMedia(forceRefresh = true)
             loadStorageStats()
         }
     }
@@ -800,15 +797,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(gallerySubTab = subTab) }
     }
 
-    private fun filterMediaList(list: List<MediaItem>, filter: String): List<MediaItem> {
-        return when (filter) {
-            "PHOTOS" -> list.filter { !it.isVideo }
-            "VIDEOS" -> list.filter { it.isVideo }
-            "FAVORITES" -> list.filter { it.isFavorite }
-            else -> list
-        }
-    }
-
     fun setGalleryFilter(filter: String) {
         _uiState.update { it.copy(galleryFilter = filter) }
 
@@ -834,27 +822,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshGallery() {
         galleryRefreshFlow.value = System.currentTimeMillis()
-    }
-
-    fun loadMedia(forceRefresh: Boolean = false) {
-        if (!forceRefresh && _uiState.value.allMediaItems.isNotEmpty()) {
-            return
-        }
-        viewModelScope.launch {
-            if (_uiState.value.allMediaItems.isEmpty()) {
-                _uiState.update { it.copy(isLoadingMedia = true) }
-            }
-            val (allMedia, albums) = repository.getAllMediaData()
-            val filtered = filterMediaList(allMedia, _uiState.value.galleryFilter)
-            _uiState.update {
-                it.copy(
-                    allMediaItems = allMedia,
-                    mediaItems = filtered,
-                    mediaAlbums = albums,
-                    isLoadingMedia = false
-                )
-            }
-        }
     }
 
     fun openFullscreenMedia(item: MediaItem, list: List<MediaItem>) {
@@ -1116,21 +1083,10 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             val isNowFav = repository.toggleFavorite(fileItem)
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
 
-            // Instantly update cached media in memory
-            val updatedAllMedia = _uiState.value.allMediaItems.map { media ->
-                if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
-            }
-            val filtered = filterMediaList(updatedAllMedia, _uiState.value.galleryFilter)
             val updatedFsList = _uiState.value.fullscreenMediaList.map { media ->
                 if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
             }
-            _uiState.update {
-                it.copy(
-                    allMediaItems = updatedAllMedia,
-                    mediaItems = filtered,
-                    fullscreenMediaList = updatedFsList
-                )
-            }
+            _uiState.update { it.copy(fullscreenMediaList = updatedFsList) }
             loadFiles()
             refreshGallery()
         }
@@ -1143,7 +1099,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (ok) {
                 showMessage("Restored ${trashEntity.name}")
                 loadFiles()
-                loadMedia(forceRefresh = true)
                 loadStorageStats()
             } else {
                 showMessage("Could not restore ${trashEntity.name}")
