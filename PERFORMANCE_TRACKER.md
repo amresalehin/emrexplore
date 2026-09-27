@@ -9,6 +9,8 @@ Turn the current Fossify Files + Gallery implementation into a storage-first, lo
 
 This file is the running implementation log. Update it after each meaningful change.
 
+**Actionable checklist:** see `task.md`.
+
 ## Current architecture snapshot
 
 ### File Explorer
@@ -18,13 +20,13 @@ This file is the running implementation log. Update it after each meaningful cha
 - Background indexing already uses `IoPriorityCoordinator.yieldIfInteractive()`.
 
 ### Gallery
-- Gallery currently calls `getAllMediaData()`.
-- `getMediaItems()` queries all MediaStore images and all MediaStore videos.
-- The complete result is placed in `UiState.allMediaItems`.
-- Filters operate by creating additional in-memory lists.
-- Album grouping is performed with `groupBy` over the complete media list.
+- Gallery previously called `getAllMediaData()`.
+- `getMediaItems()` queried all MediaStore images and all MediaStore videos.
+- The complete result was placed in `UiState.allMediaItems`.
+- Filters operated by creating additional in-memory lists.
+- Album grouping was performed with `groupBy` over the complete media list.
 - Coil thumbnails already use fixed request sizing and disabled crossfade.
-- **Main scalability problem:** Gallery is not yet Paging 3 based.
+- **Main scalability problem:** Gallery was not Paging 3 based.
 
 ### Startup/indexing
 - Initial file loading is asynchronous.
@@ -59,7 +61,7 @@ Status: **IN PROGRESS**
 
 Findings:
 - File Explorer already has manual page loading.
-- Gallery remains full-list based.
+- Gallery originally remained full-list based.
 - Gallery album generation requires the complete media list.
 - Background indexing has an I/O-yield mechanism.
 - Existing performance metrics provide a useful starting point.
@@ -105,13 +107,14 @@ Implemented in this iteration:
 - Switched the Gallery timeline UI to `LazyPagingItems`.
 - Enabled a maximum loaded window of three pages to prevent unbounded Paging memory growth.
 - Added refresh/cancellation through Paging's normal lifecycle.
+- Added `task.md` as the actionable implementation checklist.
 
 Known temporary limitations:
 - Albums still use the legacy full-media grouping path.
 - Favorites still use the legacy full-media path and must be migrated to a dedicated favorites PagingSource.
 - Fullscreen navigation currently uses the loaded Paging snapshot rather than a dedicated adjacent-item loader.
 - The new source has not yet been device-tested in this environment.
-
+- The current branch has not been verified with a full Android Gradle build in this environment.
 
 Target architecture:
 
@@ -207,7 +210,7 @@ Required scenarios:
 
 ## Current next action
 
-**Phase 0 → establish device baseline; Phase 3 → finish album/favorites paging and device-validate the new timeline path.**
+**Phase 0 → establish device baseline; Phase 3 → compile/device-validate the new timeline path, then finish album/favorites paging.**
 
 Do not mark a phase complete without a measurement or test supporting the claim.
 
@@ -223,3 +226,4 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | d235c82 | Exposed galleryPagingFlow | ViewModel timeline moved toward Paging |
 | 2026-09-27 | cf70e8e | Switched Gallery timeline UI | Compose now renders LazyPagingItems |
 | 2026-09-27 | 5758c08 | Capped Paging window | Maximum three pages retained by Paging |
+| 2026-09-27 | 5b2fae2 | Added task.md | Actionable master performance checklist |
