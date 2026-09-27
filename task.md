@@ -299,3 +299,5 @@ The performance architecture is considered ready only when:
 10. Complete memory/I/O stress testing.
 
 Last updated: 2026-09-27
+
+Implementation note: Favorites now select the Room-backed Paging source through the same `galleryPagingFlow`, so the normal timeline source is not collected in parallel. Album refresh is also isolated from legacy full-library loading.
