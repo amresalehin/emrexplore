@@ -53,6 +53,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemContentType
+import androidx.paging.compose.itemKey
 import androidx.compose.ui.platform.LocalContext
 import coil.request.ImageRequest
 import androidx.compose.ui.Alignment
@@ -79,6 +83,8 @@ fun GalleryScreen(
     viewModel: UnifiedViewModel,
     modifier: Modifier = Modifier
 ) {
+    val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+
     // If inside an album, handle back button
     BackHandler(enabled = uiState.selectedAlbum != null) {
         viewModel.selectAlbum(null)
@@ -125,7 +131,13 @@ fun GalleryScreen(
                             Icon(Icons.Default.ViewColumn, contentDescription = "Grid Columns")
                         }
 
-                        IconButton(onClick = { viewModel.loadMedia(forceRefresh = true) }) {
+                        IconButton(onClick = {
+                            if (uiState.gallerySubTab == GallerySubTab.ALBUMS) {
+                                viewModel.loadMedia(forceRefresh = true)
+                            } else {
+                                pagedMedia.refresh()
+                            }
+                        }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
@@ -211,13 +223,26 @@ fun GalleryScreen(
         } else {
             when (uiState.gallerySubTab) {
                 GallerySubTab.TIMELINE -> {
-                    if (uiState.mediaItems.isEmpty()) {
-                        EmptyGalleryMessage("No photos or videos found.\nTake photos or add sample images!")
+                    if (uiState.galleryFilter == "FAVORITES") {
+                        if (uiState.mediaItems.isEmpty()) {
+                            EmptyGalleryMessage("No favorite media")
+                        } else {
+                            MediaGrid(
+                                items = uiState.mediaItems,
+                                columns = uiState.galleryColumns,
+                                onItemClick = { item ->
+                                    viewModel.openFullscreenMedia(item, uiState.mediaItems)
+                                }
+                            )
+                        }
                     } else {
-                        MediaGrid(
-                            items = uiState.mediaItems,
+                        PagedMediaGrid(
+                            items = pagedMedia,
                             columns = uiState.galleryColumns,
-                            onItemClick = { item -> viewModel.openFullscreenMedia(item, uiState.mediaItems) }
+                            onItemClick = { item ->
+                                val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
+                                viewModel.openFullscreenMedia(item, loaded)
+                            }
                         )
                     }
                 }
@@ -233,6 +258,61 @@ fun GalleryScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PagedMediaGrid(
+    items: androidx.paging.compose.LazyPagingItems<MediaItem>,
+    columns: Int,
+    onItemClick: (MediaItem) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        contentPadding = PaddingValues(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        items(
+            count = items.itemCount,
+            key = items.itemKey { it.path },
+            contentType = items.itemContentType { if (it.isVideo) "video" else "photo" }
+        ) { index ->
+            val item = items[index]
+            if (item != null) {
+                MediaGridThumbnail(
+                    item = item,
+                    onClick = { onItemClick(item) }
+                )
+            }
+        }
+
+        if (items.loadState.append is LoadState.Loading) {
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        }
+    }
+
+    if (items.itemCount == 0 && items.loadState.refresh is LoadState.Loading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+    }
+
+    if (items.itemCount == 0 && items.loadState.refresh is LoadState.Error) {
+        EmptyGalleryMessage("Could not load media. Pull to refresh.")
     }
 }
 
