@@ -194,10 +194,20 @@ class XmpParser {
         return if (sb.isNotEmpty()) sb.toString().trim() else text
     }
 
+    private fun createPullParser(): XmlPullParser {
+        return try {
+            Xml.newPullParser()
+        } catch (e: Throwable) {
+            val factory = org.xmlpull.v1.XmlPullParserFactory.newInstance()
+            factory.isNamespaceAware = true
+            factory.newPullParser()
+        }
+    }
+
     private fun parseXmpProperties(xml: String): List<XmpPropertyItem> {
         val properties = mutableListOf<XmpPropertyItem>()
         try {
-            val parser = Xml.newPullParser()
+            val parser = createPullParser()
             parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
             parser.setInput(StringReader(xml))
 
@@ -306,9 +316,12 @@ class XmpParser {
 
     private fun fallbackRegexProperties(xml: String): List<XmpPropertyItem> {
         val list = mutableListOf<XmpPropertyItem>()
+        // Strip top-level wrapper elements so they don't consume all inner tags
+        val cleaned = xml
+            .replace(Regex("<[/]?(x:xmpmeta|rdf:RDF|rdf:Description)[^>]*>", RegexOption.IGNORE_CASE), "")
         // Match <prefix:tag>value</prefix:tag>
         val regex = Regex("<([a-zA-Z0-9_-]+):([a-zA-Z0-9_-]+)[^>]*>(.*?)</\\1:\\2>", RegexOption.DOT_MATCHES_ALL)
-        for (match in regex.findAll(xml)) {
+        for (match in regex.findAll(cleaned)) {
             val prefix = match.groupValues[1]
             val tag = match.groupValues[2]
             var content = match.groupValues[3].trim()

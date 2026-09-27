@@ -648,10 +648,11 @@ class FileRepository(private val context: Context) {
             )
         }
 
-        // 2. Check Room DB if indexed
+        // 2. Check Room DB if fully indexed
         try {
             val roomCount = fileIndexDao.getCountByParent(dirPath)
-            if (roomCount > 0) {
+            val dirFileCount = dir.list()?.size ?: 0
+            if (roomCount > 0 && roomCount == dirFileCount) {
                 val entities = fileIndexDao.getFilesByParentPaged(dirPath, limit = pageSize, offset = page * pageSize)
                 val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
                 val items = entities
@@ -705,7 +706,6 @@ class FileRepository(private val context: Context) {
         val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
 
         val pageItems = ArrayList<FileItem>(pageNames.size)
-        val entitiesToBatch = ArrayList<IndexedFileEntity>(pageNames.size)
 
         for (name in pageNames) {
             val file = File(dir, name)
@@ -734,30 +734,6 @@ class FileRepository(private val context: Context) {
                 uri = Uri.fromFile(file)
             )
             pageItems.add(item)
-
-            entitiesToBatch.add(
-                IndexedFileEntity(
-                    path = file.absolutePath,
-                    name = name,
-                    parentPath = dirPath,
-                    size = size,
-                    lastModified = lastModified,
-                    isDirectory = isDir,
-                    mimeType = mime,
-                    extension = ext,
-                    category = determineCategory(isDir, ext, dir.name).name,
-                    childCount = childCount,
-                    indexedTimestamp = System.currentTimeMillis()
-                )
-            )
-        }
-
-        if (entitiesToBatch.isNotEmpty()) {
-            try {
-                fileIndexDao.insertAll(entitiesToBatch)
-            } catch (e: Exception) {
-                // ignore
-            }
         }
 
         val sortedPageItems = sortFileList(pageItems, sortOption)
