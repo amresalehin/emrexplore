@@ -18,7 +18,7 @@ class FavoriteMediaPagingSource(context: Context) : PagingSource<Int, MediaItem>
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
         val offset = params.key ?: 0
-        val limit = params.loadSize.coerceIn(60, 120)
+        val limit = params.loadSize.coerceIn(1, 120)
         return try {
             val paths = favoriteDao.getFavoritePathsPage(limit, offset)
             if (paths.isEmpty()) return LoadResult.Page(emptyList(), if (offset == 0) null else offset - limit, null)
