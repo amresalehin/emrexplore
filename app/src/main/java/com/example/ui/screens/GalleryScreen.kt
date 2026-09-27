@@ -89,6 +89,9 @@ fun GalleryScreen(
     val context = LocalContext.current
     val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+    val favoriteRevision = uiState.favoritesList.hashCode()
+    val favoriteFlow = remember(favoriteRevision) { MediaRepository(context).favoritesPager() }
+    val favoritePagedMedia = favoriteFlow.collectAsLazyPagingItems()
     var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
 
     LaunchedEffect(uiState.gallerySubTab) {
@@ -246,17 +249,14 @@ fun GalleryScreen(
             when (uiState.gallerySubTab) {
                 GallerySubTab.TIMELINE -> {
                     if (uiState.galleryFilter == "FAVORITES") {
-                        if (uiState.mediaItems.isEmpty()) {
-                            EmptyGalleryMessage("No favorite media")
-                        } else {
-                            MediaGrid(
-                                items = uiState.mediaItems,
-                                columns = uiState.galleryColumns,
-                                onItemClick = { item ->
-                                    viewModel.openFullscreenMedia(item, uiState.mediaItems)
-                                }
-                            )
-                        }
+                        PagedMediaGrid(
+                            items = favoritePagedMedia,
+                            columns = uiState.galleryColumns,
+                            onItemClick = { item ->
+                                val loaded = favoritePagedMedia.itemSnapshotList.items.filterNotNull()
+                                viewModel.openFullscreenMedia(item, loaded)
+                            }
+                        )
                     } else {
                         PagedMediaGrid(
                             items = pagedMedia,
