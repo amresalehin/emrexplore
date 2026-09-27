@@ -93,7 +93,25 @@ Remaining:
 - measure memory and I/O under large folders
 
 ### Phase 3 — Gallery scalability
-Status: **NOT STARTED**
+Status: **IN PROGRESS**
+
+Implemented in this iteration:
+- Added AndroidX Paging 3.5.1 runtime + Compose dependencies.
+- Added a dedicated `MediaStorePagingSource`.
+- Unified image/video queries through `MediaStore.Files` instead of materializing two complete collections.
+- Added deterministic `DATE_ADDED DESC, _ID DESC` ordering.
+- Added filter-aware MediaStore selection for All / Photos / Videos.
+- Added a dedicated `MediaRepository` with bounded Paging configuration.
+- Switched the Gallery timeline UI to `LazyPagingItems`.
+- Enabled a maximum loaded window of three pages to prevent unbounded Paging memory growth.
+- Added refresh/cancellation through Paging's normal lifecycle.
+
+Known temporary limitations:
+- Albums still use the legacy full-media grouping path.
+- Favorites still use the legacy full-media path and must be migrated to a dedicated favorites PagingSource.
+- Fullscreen navigation currently uses the loaded Paging snapshot rather than a dedicated adjacent-item loader.
+- The new source has not yet been device-tested in this environment.
+
 
 Target architecture:
 
@@ -189,7 +207,7 @@ Required scenarios:
 
 ## Current next action
 
-**Phase 0 → establish baseline, then implement the Gallery Paging 3 migration as the first major architectural change.**
+**Phase 0 → establish device baseline; Phase 3 → finish album/favorites paging and device-validate the new timeline path.**
 
 Do not mark a phase complete without a measurement or test supporting the claim.
 
@@ -198,3 +216,9 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | Date | Commit | Change | Result |
 |---|---|---|---|
 | 2026-09-27 | 412398b | Starting point audited | File Explorer paging exists; Gallery remains full-list based |
+| 2026-09-27 | 775cb8a | Added implementation tracker | Running performance plan/log established |
+| 2026-09-27 | 7f2c9db | Added Paging 3.5.1 dependencies | Paging runtime + Compose available |
+| 2026-09-27 | 9afe1a0 | Added MediaStorePagingSource | Unified, bounded MediaStore timeline source |
+| 2026-09-27 | e3c6eae | Added MediaRepository | Dedicated paging repository |
+| 2026-09-27 | d235c82 | Exposed galleryPagingFlow | ViewModel timeline moved toward Paging |
+| 2026-09-27 | cf70e8e | Switched Gallery timeline UI | Compose now renders LazyPagingItems |
