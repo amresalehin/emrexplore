@@ -145,7 +145,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository = FileRepository(application)
     private val mediaRepository = MediaRepository(application)
-    private val galleryFilterFlow = MutableStateFlow(MediaFilter.ALL)
+    private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
     private val galleryRefreshFlow = MutableStateFlow(0L)
 
     /**
@@ -154,7 +154,13 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
      */
     val galleryPagingFlow: Flow<PagingData<MediaItem>> =
         combine(galleryFilterFlow, galleryRefreshFlow) { filter, _ -> filter }
-            .flatMapLatest { filter -> mediaRepository.pager(filter) }
+            .flatMapLatest { filter ->
+                if (filter == null) {
+                    mediaRepository.favoritesPager()
+                } else {
+                    mediaRepository.pager(filter)
+                }
+            }
             .cachedIn(viewModelScope)
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -792,9 +798,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun setGallerySubTab(subTab: GallerySubTab) {
         _uiState.update { it.copy(gallerySubTab = subTab) }
-        if (subTab == GallerySubTab.ALBUMS && _uiState.value.mediaAlbums.isEmpty()) {
-            loadMedia(forceRefresh = true)
-        }
     }
 
     private fun filterMediaList(list: List<MediaItem>, filter: String): List<MediaItem> {
@@ -813,7 +816,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             "ALL" -> galleryFilterFlow.value = MediaFilter.ALL
             "PHOTOS" -> galleryFilterFlow.value = MediaFilter.PHOTOS
             "VIDEOS" -> galleryFilterFlow.value = MediaFilter.VIDEOS
-            "FAVORITES" -> refreshGallery()
+            "FAVORITES" -> galleryFilterFlow.value = null
         }
     }
 
