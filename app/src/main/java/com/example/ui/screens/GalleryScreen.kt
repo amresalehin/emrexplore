@@ -49,6 +49,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -72,6 +73,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.MediaAlbum
 import com.example.data.model.MediaItem
+import com.example.data.media.MediaAlbumRepository
+import com.example.data.media.MediaRepository
 import com.example.ui.viewmodel.GallerySubTab
 import com.example.ui.viewmodel.UiState
 import com.example.ui.viewmodel.UnifiedViewModel
@@ -83,7 +86,22 @@ fun GalleryScreen(
     viewModel: UnifiedViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+    var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
+
+    LaunchedEffect(uiState.gallerySubTab) {
+        if (uiState.gallerySubTab == GallerySubTab.ALBUMS && discoveredAlbums.isEmpty()) {
+            discoveredAlbums = MediaAlbumRepository(context).getAlbums()
+        }
+    }
+
+    val albumPagedMedia = if (uiState.selectedAlbum != null) {
+        val albumFlow = remember(uiState.selectedAlbum.id) {
+            MediaRepository(context).albumPager(uiState.selectedAlbum.id)
+        }
+        albumFlow.collectAsLazyPagingItems()
+    } else null
 
     // If inside an album, handle back button
     BackHandler(enabled = uiState.selectedAlbum != null) {
@@ -210,14 +228,17 @@ fun GalleryScreen(
             }
         } else if (uiState.selectedAlbum != null) {
             // Display media inside selected album
-            val albumMedia = uiState.allMediaItems.filter { it.bucketName == uiState.selectedAlbum.name }
-            if (albumMedia.isEmpty()) {
-                EmptyGalleryMessage("No media found in this album")
+            val albumItems = albumPagedMedia
+            if (albumItems == null) {
+                EmptyGalleryMessage("No album selected")
             } else {
-                MediaGrid(
-                    items = albumMedia,
+                PagedMediaGrid(
+                    items = albumItems,
                     columns = uiState.galleryColumns,
-                    onItemClick = { item -> viewModel.openFullscreenMedia(item, albumMedia) }
+                    onItemClick = { item ->
+                        val loaded = albumItems.itemSnapshotList.items.filterNotNull()
+                        viewModel.openFullscreenMedia(item, loaded)
+                    }
                 )
             }
         } else {
@@ -247,11 +268,11 @@ fun GalleryScreen(
                     }
                 }
                 GallerySubTab.ALBUMS -> {
-                    if (uiState.mediaAlbums.isEmpty()) {
+                    if (discoveredAlbums.isEmpty()) {
                         EmptyGalleryMessage("No albums detected")
                     } else {
                         AlbumsGrid(
-                            albums = uiState.mediaAlbums,
+                            albums = discoveredAlbums,
                             onAlbumClick = { album -> viewModel.selectAlbum(album) }
                         )
                     }
