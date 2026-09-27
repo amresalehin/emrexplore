@@ -89,9 +89,6 @@ fun GalleryScreen(
     val context = LocalContext.current
     val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
-    val favoriteRevision = uiState.favoritesList.hashCode()
-    val favoriteFlow = remember(favoriteRevision) { MediaRepository(context).favoritesPager() }
-    val favoritePagedMedia = favoriteFlow.collectAsLazyPagingItems()
     var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
 
     LaunchedEffect(uiState.gallerySubTab) {
@@ -155,7 +152,7 @@ fun GalleryScreen(
 
                         IconButton(onClick = {
                             if (uiState.gallerySubTab == GallerySubTab.ALBUMS) {
-                                viewModel.loadMedia(forceRefresh = true)
+                                discoveredAlbums = MediaAlbumRepository(context).getAlbums()
                             } else {
                                 pagedMedia.refresh()
                             }
@@ -248,25 +245,14 @@ fun GalleryScreen(
         } else {
             when (uiState.gallerySubTab) {
                 GallerySubTab.TIMELINE -> {
-                    if (uiState.galleryFilter == "FAVORITES") {
-                        PagedMediaGrid(
-                            items = favoritePagedMedia,
-                            columns = uiState.galleryColumns,
-                            onItemClick = { item ->
-                                val loaded = favoritePagedMedia.itemSnapshotList.items.filterNotNull()
-                                viewModel.openFullscreenMedia(item, loaded)
-                            }
-                        )
-                    } else {
-                        PagedMediaGrid(
-                            items = pagedMedia,
-                            columns = uiState.galleryColumns,
-                            onItemClick = { item ->
-                                val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
-                                viewModel.openFullscreenMedia(item, loaded)
-                            }
-                        )
-                    }
+                    PagedMediaGrid(
+                        items = pagedMedia,
+                        columns = uiState.galleryColumns,
+                        onItemClick = { item ->
+                            val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
+                            viewModel.openFullscreenMedia(item, loaded)
+                        }
+                    )
                 }
                 GallerySubTab.ALBUMS -> {
                     if (discoveredAlbums.isEmpty()) {
