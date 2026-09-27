@@ -5,7 +5,7 @@ Baseline commit: `412398b4854619dba1d671f2b61b9719e76311da`
 
 ## Objective
 
-Turn the current Fossify Files + Gallery implementation into a storage-first, low-memory, low-I/O Android file manager that remains responsive during browsing, scrolling, search, thumbnail loading, and background indexing.
+Turn the current Emrexplore Files + Gallery implementation into a storage-first, low-memory, low-I/O Android file manager that remains responsive during browsing, scrolling, search, thumbnail loading, and background indexing.
 
 This file is the running implementation log. Update it after each meaningful change.
 
@@ -269,23 +269,29 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | 16649bc | Remove legacy Gallery loads | File operations no longer trigger full MediaStore materialization |
 
 
-### Phase 3.3 — Fullscreen bounded-window groundwork
-Status: **IN PROGRESS**
+### Phase 3.3 — Fullscreen bounded-window migration
+Status: **COMPLETE**
 
 Implemented:
 - Added a repository-side fullscreen loader that reuses the canonical timeline, Favorites, and album PagingSources.
 - Viewer requests are positional and bounded rather than copying the currently loaded gallery snapshot.
 - PagingSources now honor small load sizes, allowing a 5-item viewer window instead of forcing a 60–120 item page.
 
-Remaining:
-- Wire the viewer state to an absolute gallery position rather than a local list index.
-- Load the initial ±2 adjacent items around the tapped item.
-- Support previous/next across unloaded Paging windows.
-- Keep the filmstrip bounded to the same small window.
-- Add cancellation for rapid previous/next navigation.
-- Validate behavior against large libraries on a real device.
+Completed:
+- Gallery clicks now identify the correct fullscreen source (timeline filter or album).
+- Viewer position is resolved against the underlying MediaStore/Room ordering instead of the current Compose Paging snapshot.
+- Initial viewer load fetches only five items around the absolute position.
+- Previous/next requests can cross unloaded Paging windows.
+- The filmstrip remains bounded to the current five-item window.
+- Favorite ordering is deterministic and supports direct position/count lookup.
+- Standalone file-manager media opens remain supported without requiring a MediaStore position lookup.
 
-This approach keeps fullscreen navigation on the same query/paging architecture while avoiding a full-library in-memory viewer dataset.
+Validation still required:
+- Full Android Gradle compile.
+- Real-device navigation through large timelines, albums, and favorites.
+- Rapid previous/next cancellation and provider behavior under storage churn.
+
+This keeps fullscreen navigation on the same query/paging architecture while avoiding a full-library in-memory viewer dataset.
 
 
 ### Phase 0.2 — Environment and secret cleanup
@@ -311,3 +317,18 @@ Verification:
 Important:
 - This is repository/static configuration validation only. A full Android Gradle build has not yet been run in this environment.
 - Removing the AI Studio/Firebase configuration is intentional for the current offline-first architecture. If cloud AI is added later, credentials must be supplied through a secure runtime/backend mechanism rather than committed to the APK or repository.
+
+
+### Phase 3.4 — Aves-class Gallery direction
+Status: **PLANNED / NEXT**
+
+The Gallery target has been explicitly expanded from a fast grid into a media-management surface comparable in capability to Aves. The performance invariant remains unchanged: no normal Gallery feature may materialize the complete media library into a hot in-memory list.
+
+Next capability groups:
+- Viewer: immersive swipe-first navigation, video controls, richer actions, slideshow.
+- Management: multi-selection, batch share/favorite/move/copy/delete, rename, trash/restore.
+- Organization: rich categories, sorting/grouping, date/location/tag filters, search.
+- Metadata: direct inspector integration, GPS/location, safe metadata editing.
+- Intelligence: OCR, objects, captions, people, embeddings and semantic search only after deterministic browsing is complete.
+
+| 2026-09-27 | fb54089 | Deterministic favorite ordering | Favorite pages and viewer position lookup now share timestamp + path ordering |\n| 2026-09-27 | ef30c4e | Bounded viewer position/count resolution | MediaStore/album/favorite viewers can resolve absolute positions without the gallery snapshot |\n| 2026-09-27 | 50e3b41 | Viewer ViewModel migration | Fullscreen state now stores source, absolute index, bounded window and total count |\n| 2026-09-27 | ba49d2b | Gallery source wiring | Timeline and album clicks pass the correct fullscreen source |\n| 2026-09-27 | fb2c46b | Bounded viewer UI | Filmstrip and navigation operate on window-local items plus absolute positions |\n| 2026-09-27 | d79b462 | MainActivity viewer wiring | Viewer no longer reconstructs navigation from the Paging snapshot |\n| 2026-09-27 | a379aca | Aves-class roadmap | Added media-management capability roadmap and performance invariant |\n
