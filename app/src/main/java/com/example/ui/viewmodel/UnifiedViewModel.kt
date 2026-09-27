@@ -100,6 +100,7 @@ data class UiState(
     val selectedAlbum: MediaAlbum? = null,
     val galleryColumns: Int = 3,
     val isLoadingMedia: Boolean = false,
+    val gallerySelection: List<MediaItem> = emptyList(),
 
     // Browse / Categories
     val selectedCategory: CategoryType? = null,
@@ -832,6 +833,45 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         galleryRefreshFlow.value = System.currentTimeMillis()
     }
 
+    // Gallery selection is intentionally bounded to items the user explicitly selects.
+    // It never materializes the complete MediaStore library.
+    fun toggleGallerySelection(item: MediaItem) {
+        _uiState.update { state ->
+            val selected = state.gallerySelection.toMutableList()
+            val existing = selected.indexOfFirst { it.path == item.path }
+            if (existing >= 0) selected.removeAt(existing) else selected.add(item)
+            state.copy(gallerySelection = selected)
+        }
+    }
+
+    fun clearGallerySelection() {
+        _uiState.update { it.copy(gallerySelection = emptyList()) }
+    }
+
+    fun favoriteGallerySelection() {
+        val selected = _uiState.value.gallerySelection
+        if (selected.isEmpty()) return
+        viewModelScope.launch {
+            selected.forEach { media -> repository.toggleFavorite(media.toFileItem()) }
+            clearGallerySelection()
+            refreshGallery()
+            showMessage("Updated favorites for " + selected.size + " items")
+        }
+    }
+
+    fun deleteGallerySelection(toTrash: Boolean = true) {
+        val selected = _uiState.value.gallerySelection
+        if (selected.isEmpty()) return
+        viewModelScope.launch {
+            var count = 0
+            selected.forEach { media -> if (repository.deleteFile(media.path, toTrash)) count++ }
+            clearGallerySelection()
+            refreshGallery()
+            loadStorageStats()
+            showMessage(if (toTrash) "Moved $count items to Recycle Bin" else "Deleted $count items")
+        }
+    }
+
     fun openFullscreenMedia(
         item: MediaItem,
         list: List<MediaItem>,
@@ -1232,3 +1272,13 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         audioProgressJob?.cancel()
     }
 }
+
+private fun MediaItem.toFileItem(): FileItem = FileItem(
+    name = name,
+    path = path,
+    size = size,
+    lastModified = dateAdded,
+    isDirectory = false,
+    mimeType = mimeType,
+    isFavorite = isFavorite
+)
