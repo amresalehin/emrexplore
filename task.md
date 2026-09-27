@@ -307,3 +307,15 @@ Fullscreen implementation note: repository support now loads a 5-item window aro
 Static validation pass: removed all normal runtime calls to the legacy full-library `loadMedia()` path; Gallery browsing now relies on Paging/album discovery.
 
 Implementation note: Favorites now select the Room-backed Paging source through the same `galleryPagingFlow`, so the normal timeline source is not collected in parallel. Album refresh is also isolated from legacy full-library loading.
+
+
+## 0.2 Environment & Secret Hygiene
+
+- [x] Remove the Secrets Gradle Plugin.
+- [x] Remove the committed `.env.example` API-key template.
+- [x] Remove obsolete Firebase AI / App Check / Google Services build integration.
+- [x] Remove the server-side Gemini capability declaration.
+- [x] Update local setup documentation so no API key is required.
+- [x] Ignore local signing keystores and environment files.
+- [ ] Run a full Android Gradle build after the cleanup.
+- [ ] Re-scan the complete Git history for previously committed secrets if repository history exposure is suspected.
