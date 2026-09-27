@@ -108,9 +108,15 @@ Implemented in this iteration:
 - Enabled a maximum loaded window of three pages to prevent unbounded Paging memory growth.
 - Added refresh/cancellation through Paging's normal lifecycle.
 - Added `task.md` as the actionable implementation checklist.
+- Added a separate `MediaAlbumRepository` so Albums no longer depend on `getAllMediaData()` in the Gallery screen.
+- Added `MediaStoreAlbumPagingSource` and album-scoped Paging configuration for album contents.
+- Switched album drill-down UI from `allMediaItems.filter(...)` to the album Paging source.
+- Fixed Paging cancellation so `CancellationException` is not converted into an ordinary load error.
+- Replaced path-based Compose Paging keys with stable media URI keys.
 
 Known temporary limitations:
-- Albums still use the legacy full-media grouping path.
+- Album discovery now uses a separate metadata-only repository on Android 11+ with MediaStore grouped query arguments; album item counts are intentionally deferred (`-1`) and need a follow-up count strategy.
+- Android 10 and earlier use a compatibility album scan because bucket columns were introduced in API 29.
 - Favorites still use the legacy full-media path and must be migrated to a dedicated favorites PagingSource.
 - Fullscreen navigation currently uses the loaded Paging snapshot rather than a dedicated adjacent-item loader.
 - The new source has not yet been device-tested in this environment.
@@ -227,3 +233,10 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | cf70e8e | Switched Gallery timeline UI | Compose now renders LazyPagingItems |
 | 2026-09-27 | 5758c08 | Capped Paging window | Maximum three pages retained by Paging |
 | 2026-09-27 | 5b2fae2 | Added task.md | Actionable master performance checklist |
+| 2026-09-27 | caba2f2 | Preserve Paging cancellation | Cancellations now propagate instead of becoming load errors |
+| 2026-09-27 | 551b7be | Stable gallery item keys | Compose keys now use media URI |
+| 2026-09-27 | db0e2f1 | Album PagingSource | Album contents can load independently by bucket |
+| 2026-09-27 | 06cd337 | Album repository | Album discovery no longer requires full MediaItem materialization |
+| 2026-09-27 | 94b9a92 | Album Paging repository | MediaRepository exposes bounded album paging |
+| 2026-09-27 | 6e98b69 | Album UI migration | Album drill-down uses Paging instead of allMediaItems |
+| 2026-09-27 | 368eb75 | Album UI safety fixes | Stable selected-album state and unknown-count rendering |
