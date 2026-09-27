@@ -161,6 +161,11 @@ Still blocked on validation:
 - Full Android Gradle compile has not been run in this environment.
 - Real-device MediaStore/Paging behavior remains unverified.
 
+### Phase 3.2 — Remove legacy full-library Gallery loads
+Status: **COMPLETE**
+
+Removed runtime calls to `loadMedia(forceRefresh = true)` from file rename, delete, batch-delete, and trash-restore flows. The legacy full-library Gallery loader is no longer part of normal browsing or file-operation refreshes.
+
 ### Phase 4 — Thumbnail pipeline
 Status: **PARTIALLY COMPLETE**
 
@@ -261,3 +266,4 @@ Do not mark a phase complete without a measurement or test supporting the claim.
 | 2026-09-27 | 1e29848 | Favorite UI migration | Favorites grid now uses Paging |
 | 2026-09-27 | 821c97a | Remove duplicate favorite Paging collection | Shared gallery Paging flow now selects Favorites directly |
 | 2026-09-27 | d22c50e | Fix album refresh coroutine | Album refresh no longer calls suspend repository from click handler |
+| 2026-09-27 | 16649bc | Remove legacy Gallery loads | File operations no longer trigger full MediaStore materialization |
