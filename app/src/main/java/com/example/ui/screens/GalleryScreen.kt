@@ -77,6 +77,7 @@ import com.example.data.model.MediaAlbum
 import com.example.data.model.MediaItem
 import com.example.data.media.MediaAlbumRepository
 import com.example.data.media.MediaRepository
+import com.example.data.media.FullscreenMediaSource
 import com.example.ui.viewmodel.GallerySubTab
 import com.example.ui.viewmodel.UiState
 import com.example.ui.viewmodel.UnifiedViewModel
@@ -243,7 +244,7 @@ fun GalleryScreen(
                     columns = uiState.galleryColumns,
                     onItemClick = { item ->
                         val loaded = albumItems.itemSnapshotList.items.filterNotNull()
-                        viewModel.openFullscreenMedia(item, loaded)
+                        viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
                     }
                 )
             }
@@ -255,7 +256,7 @@ fun GalleryScreen(
                         columns = uiState.galleryColumns,
                         onItemClick = { item ->
                             val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
-                            viewModel.openFullscreenMedia(item, loaded)
+                            viewModel.openFullscreenMedia(item, loaded, when (uiState.galleryFilter) {\n                                "PHOTOS" -> FullscreenMediaSource.PHOTOS\n                                "VIDEOS" -> FullscreenMediaSource.VIDEOS\n                                "FAVORITES" -> FullscreenMediaSource.FAVORITES\n                                else -> FullscreenMediaSource.ALL\n                            })
                         }
                     )
                 }
