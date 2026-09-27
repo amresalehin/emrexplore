@@ -12,7 +12,8 @@ enum class FullscreenMediaSource {
     ALL,
     PHOTOS,
     VIDEOS,
-    FAVORITES
+    FAVORITES,
+    ALBUM
 }
 
 data class MediaViewerWindow(
@@ -48,7 +49,8 @@ class MediaRepository(context: Context) {
     suspend fun loadViewerWindow(
         source: FullscreenMediaSource,
         centerIndex: Int,
-        radius: Int = 2
+        radius: Int = 2,
+        albumId: String? = null
     ): MediaViewerWindow {
         val start = (centerIndex - radius).coerceAtLeast(0)
         val size = (radius * 2 + 1).coerceAtLeast(1)
@@ -57,6 +59,8 @@ class MediaRepository(context: Context) {
             FullscreenMediaSource.PHOTOS -> MediaStorePagingSource(appContext, MediaFilter.PHOTOS)
             FullscreenMediaSource.VIDEOS -> MediaStorePagingSource(appContext, MediaFilter.VIDEOS)
             FullscreenMediaSource.FAVORITES -> FavoriteMediaPagingSource(appContext)
+            FullscreenMediaSource.ALBUM -> requireNotNull(albumId) { "albumId is required for album fullscreen source" }
+                .let { MediaStoreAlbumPagingSource(appContext, it) }
         }
         return when (val result = pagingSource.load(
             androidx.paging.PagingSource.LoadParams.Refresh(start, size, false)
