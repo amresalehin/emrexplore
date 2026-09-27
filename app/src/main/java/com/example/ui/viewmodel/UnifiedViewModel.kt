@@ -176,6 +176,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private var audioProgressJob: Job? = null
     private var homeSearchJob: Job? = null
     private var loadFilesJob: Job? = null
+    private var fullscreenLoadJob: Job? = null
 
     init {
         // Collect decoupled file operations progress
@@ -850,7 +851,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             )
         }
         if (source == null) return
-        viewModelScope.launch {
+        fullscreenLoadJob?.cancel()
+        fullscreenLoadJob = viewModelScope.launch {
             try {
                 val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId)
                 val window = mediaRepository.loadViewerWindow(source, absoluteIndex, radius = 2, albumId = albumId)
@@ -871,6 +873,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun openStandaloneFullscreenMedia(item: MediaItem) {
+        fullscreenLoadJob?.cancel()
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = 0,
@@ -885,6 +888,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun closeFullscreenMedia() {
+        fullscreenLoadJob?.cancel()
+        fullscreenLoadJob = null
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = null,
@@ -907,8 +912,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             _uiState.update { it.copy(fullscreenMediaIndex = targetIndex) }
             return
         }
-        viewModelScope.launch {
-            _uiState.update { it.copy(fullscreenLoading = true, fullscreenMediaIndex = targetIndex) }
+        fullscreenLoadJob?.cancel()
+        fullscreenLoadJob = viewModelScope.launch {
+            _uiState.update { it.copy(fullscreenLoading = true) }
             try {
                 val window = mediaRepository.loadViewerWindow(source, targetIndex, radius = 2, albumId = state.fullscreenAlbumId)
                 _uiState.update {
