@@ -23,6 +23,9 @@ interface FavoriteDao {
     @Query("SELECT path FROM favorites ORDER BY timestamp DESC, path ASC LIMIT :limit OFFSET :offset")
     suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
 
+    @Query("SELECT timestamp FROM favorites WHERE path = :path LIMIT 1")
+    suspend fun getFavoriteTimestamp(path: String): Long?
+
     @Query("SELECT COUNT(*) FROM favorites WHERE timestamp > :timestamp OR (timestamp = :timestamp AND path < :path)")
     suspend fun countFavoritesBefore(timestamp: Long, path: String): Int
 
