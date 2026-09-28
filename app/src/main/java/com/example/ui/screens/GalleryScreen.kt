@@ -264,7 +264,6 @@ fun GalleryScreen(
                                 viewModel.setGallerySubTab(
                                     if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS else GallerySubTab.TIMELINE
                                 )
-                                searchDropdownVisible = false
                             }) {
                                 Icon(
                                     if (uiState.gallerySubTab == GallerySubTab.TIMELINE) Icons.Default.PhotoLibrary else Icons.Default.Collections,
