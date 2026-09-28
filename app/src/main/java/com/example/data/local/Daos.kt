@@ -113,6 +113,30 @@ interface FileIndexDao {
     @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath ORDER BY isDirectory DESC, name ASC LIMIT :limit OFFSET :offset")
     suspend fun getFilesByParentPaged(parentPath: String, limit: Int, offset: Int): List<IndexedFileEntity>
 
+    @Query("SELECT COUNT(*) FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%')")
+    suspend fun getVisibleCountByParent(parentPath: String, showHidden: Boolean): Int
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentNameAscPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, name DESC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentNameDescPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, size ASC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentSizeAscPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, size DESC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentSizeDescPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, lastModified ASC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentDateAscPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, lastModified DESC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentDateDescPaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
+    @Query("SELECT * FROM indexed_files WHERE parentPath = :parentPath AND (:showHidden = 1 OR name NOT LIKE '.%') ORDER BY isDirectory DESC, extension ASC, name ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFilesByParentTypePaged(parentPath: String, showHidden: Boolean, limit: Int, offset: Int): List<IndexedFileEntity>
+
     @Query("SELECT COUNT(*) FROM indexed_files WHERE parentPath = :parentPath")
     suspend fun getCountByParent(parentPath: String): Int
 

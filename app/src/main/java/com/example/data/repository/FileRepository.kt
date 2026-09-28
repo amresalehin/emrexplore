@@ -732,28 +732,18 @@ class FileRepository(private val context: Context) {
                 val roomCount = fileIndexDao.getCountByParent(dirPath)
                 val indexedDirectory = fileIndexDao.hasIndexedPath(dirPath)
                 if (roomCount > 0 || indexedDirectory) {
-                    val allIndexed = fileIndexDao.getFilesByParent(dirPath)
-                        .filter { showHidden || !it.name.startsWith(".") }
-                    val totalCount = allIndexed.size
+                    // True lazy paging: SQLite returns only the requested page.
+                    val totalCount = fileIndexDao.getVisibleCountByParent(dirPath, showHidden)
                     val offset = page * pageSize
-                    val sortedIndexed = allIndexed.sortedWith(
-                        compareBy<IndexedFileEntity> { !it.isDirectory }
-                            .thenComparator { a, b ->
-                                when (sortOption) {
-                                    SortOption.NAME_ASC -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name)
-                                    SortOption.NAME_DESC -> String.CASE_INSENSITIVE_ORDER.reversed().compare(a.name, b.name)
-                                    SortOption.SIZE_ASC -> a.size.compareTo(b.size)
-                                    SortOption.SIZE_DESC -> b.size.compareTo(a.size)
-                                    SortOption.DATE_ASC -> a.lastModified.compareTo(b.lastModified)
-                                    SortOption.DATE_DESC -> b.lastModified.compareTo(a.lastModified)
-                                    SortOption.TYPE -> {
-                                        val extCompare = String.CASE_INSENSITIVE_ORDER.compare(a.extension, b.extension)
-                                        if (extCompare != 0) extCompare else String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name)
-                                    }
-                                }
-                            }
-                    )
-                    val entities = sortedIndexed.drop(offset).take(pageSize)
+                    val entities = when (sortOption) {
+                        SortOption.NAME_ASC -> fileIndexDao.getFilesByParentNameAscPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.NAME_DESC -> fileIndexDao.getFilesByParentNameDescPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.SIZE_ASC -> fileIndexDao.getFilesByParentSizeAscPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.SIZE_DESC -> fileIndexDao.getFilesByParentSizeDescPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.DATE_ASC -> fileIndexDao.getFilesByParentDateAscPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.DATE_DESC -> fileIndexDao.getFilesByParentDateDescPaged(dirPath, showHidden, pageSize, offset)
+                        SortOption.TYPE -> fileIndexDao.getFilesByParentTypePaged(dirPath, showHidden, pageSize, offset)
+                    }
                     val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
                     val items = entities.map { entity ->
                         val file = File(entity.path)
@@ -766,7 +756,9 @@ class FileRepository(private val context: Context) {
                             mimeType = entity.mimeType,
                             extension = entity.extension,
                             isFavorite = favSet.contains(entity.path),
-                            childCount = if (entity.isDirectory) fastChildCount(file) else 0,
+                            childCount = if (entity.isDirectory) {
+                                fileIndexDao.getCountByParent(entity.path)
+                            } else 0,
                             uri = Uri.fromFile(file)
                         )
                     }
@@ -778,7 +770,7 @@ class FileRepository(private val context: Context) {
                         totalCount = totalCount,
                         page = page,
                         pageSize = pageSize,
-                        hasMore = (offset + pageSize) < totalCount
+                        hasMore = (offset + entities.size) < totalCount
                     )
                 }
             } catch (e: Exception) {
