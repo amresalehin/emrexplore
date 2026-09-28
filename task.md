@@ -364,9 +364,9 @@ The Gallery is now a media manager, not merely a thumbnail grid. The target is A
 - [x] Debounced and cancellable search query flow
 - [ ] Gallery metadata/EXIF search
 - [ ] Semantic/AI search
-- [ ] Date/year/month filtering
-- [ ] Location filtering
-- [ ] Metadata/tag filtering
+- [x] Date/year/month filtering
+- [x] Location filtering (GPS presence + near:lat,lon,radius)
+- [x] Metadata/tag filtering (camera, model, lens, ISO, aperture, focal length, description/EXIF text)
 - [ ] Duplicate/similar-media views
 - [ ] Large files / long videos views
 
@@ -393,3 +393,18 @@ Last updated: 2026-09-27
 - [x] Selection state remains bounded to explicitly selected media; no library-wide materialization.
 - [ ] Batch move/copy through FileOperationManager.
 - [ ] Select-all semantics backed by provider queries rather than Paging snapshot.
+
+
+### Gallery Metadata Search — 2026-09-28
+- [x] Provider-side filename, album, folder/path and media-type search.
+- [x] Capture-date search using MediaStore DATE_TAKEN (date:, taken:, year:, month:, after:, before:).
+- [x] EXIF camera make/model/lens filtering.
+- [x] EXIF ISO, aperture and focal-length filtering.
+- [x] EXIF description/caption/tag/keyword text search.
+- [x] GPS presence filtering (gps:true).
+- [x] Radius-based GPS search (near:lat,lon,radiusKm).
+- [x] Media location permission for unredacted EXIF GPS access.
+- [x] Search remains Paging 3 bounded; EXIF is opened only when an EXIF/GPS operator is present.
+- [ ] Persist extracted EXIF metadata for faster repeated metadata searches.
+- [ ] Add reverse-geocoded place-name indexing (e.g. city/country).
+- [ ] Add semantic/AI search over enriched metadata.
