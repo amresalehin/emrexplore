@@ -149,8 +149,9 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     // Automatically check and refresh when the activity resumes (e.g. returning from system settings)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val granted = isAllFilesAccessGranted()
+        val newlyGranted = granted && !allFilesAccessGranted
         allFilesAccessGranted = granted
-        if (granted) {
+        if (newlyGranted) {
             viewModel.onPermissionsGranted()
         }
     }

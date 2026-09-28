@@ -174,7 +174,7 @@ fun GallerySearchScreen(
                                     icon = Icons.Default.FavoriteBorder,
                                     selected = uiState.galleryFilter == "FAVORITES",
                                     onClick = {
-                                        viewModel.setGalleryFilter(if (uiState.galleryFilter == "FAVORITES") "ALL" else "FAVORITES")
+                                        viewModel.toggleGallerySearchOperator("favorite", "true")
                                     }
                                 )
                                 SearchChip(
@@ -182,7 +182,7 @@ fun GallerySearchScreen(
                                     icon = Icons.Default.Image,
                                     selected = uiState.galleryFilter == "PHOTOS",
                                     onClick = {
-                                        viewModel.setGalleryFilter(if (uiState.galleryFilter == "PHOTOS") "ALL" else "PHOTOS")
+                                        viewModel.toggleGallerySearchOperator("type", "photo")
                                     }
                                 )
                                 SearchChip(
@@ -190,15 +190,16 @@ fun GallerySearchScreen(
                                     icon = Icons.Default.Movie,
                                     selected = uiState.galleryFilter == "VIDEOS",
                                     onClick = {
-                                        viewModel.setGalleryFilter(if (uiState.galleryFilter == "VIDEOS") "ALL" else "VIDEOS")
+                                        viewModel.toggleGallerySearchOperator("type", "video")
                                     }
                                 )
                                 SearchChip(
                                     label = "Today",
                                     icon = Icons.Default.CalendarMonth,
                                     onClick = {
-                                        viewModel.setGallerySearchQuery(
-                                            "date:" + java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+                                        viewModel.toggleGallerySearchOperator(
+                                            "date",
+                                            java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
                                         )
                                     }
                                 )
@@ -211,7 +212,7 @@ fun GallerySearchScreen(
                                     SearchChip(
                                         label = ext.uppercase(Locale.US),
                                         icon = Icons.Default.Tag,
-                                        onClick = { viewModel.setGallerySearchQuery(ext) }
+                                        onClick = { viewModel.addGallerySearchTerm(ext) }
                                     )
                                 }
                             }
@@ -224,7 +225,7 @@ fun GallerySearchScreen(
                                         SearchChip(
                                             label = album.name,
                                             icon = Icons.Default.Folder,
-                                            onClick = { viewModel.setGallerySearchQuery("album:\"${album.name}\"") }
+                                            onClick = { viewModel.toggleGallerySearchOperator("album", album.name) }
                                         )
                                     }
                                 }

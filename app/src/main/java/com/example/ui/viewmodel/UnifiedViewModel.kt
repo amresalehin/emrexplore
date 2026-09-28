@@ -343,30 +343,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         }
 
         loadFilesJob = viewModelScope.launch {
-            // STEP 1: Quick check if cached items exist in memory or Room DB
-            val cached = repository.getCachedFiles(path, _uiState.value.showHidden)
-            if (!cached.isNullOrEmpty()) {
-                val sorted = sortFiles(cached, _uiState.value.sortOption)
-                val initialItems = if (sorted.size <= 300) sorted else sorted.take(120)
-                val hasMore = sorted.size > initialItems.size
-                _uiState.update {
-                    it.copy(
-                        files = initialItems,
-                        currentPage = 0,
-                        totalFilesInFolder = sorted.size,
-                        hasMorePages = hasMore,
-                        isLoadingFiles = false
-                    )
-                }
-                if (!hasMore) {
-                    if (_uiState.value.explorerPreferences.rememberLastDirectory) {
-                        repository.updateLastPath(path)
-                    }
-                    return@launch
-                }
-            }
-
-            // STEP 2: Fetch Page 0 lazily via repository.getFilesPaged (pageSize = 120)
+            // Repository-owned cache/index reuse. Always request one page so
+            // navigation never materializes an entire directory into UI state.
+            // Fetch Page 0 lazily via repository.getFilesPaged (pageSize = 120)
             val pagedResult = repository.getFilesPaged(
                 dirPath = path,
                 page = 0,
@@ -879,6 +858,35 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun setGallerySubTab(subTab: GallerySubTab) {
         _uiState.update { it.copy(gallerySubTab = subTab) }
+    }
+
+    fun toggleGallerySearchOperator(key: String, value: String) {
+        val query = _uiState.value.gallerySearchQuery.trim()
+        val escapedValue = value.replace("\\", "\\\\").replace("\"", "\\\"")
+        val tokenValue = if (value.any { it.isWhitespace() }) "\"$escapedValue\"" else escapedValue
+        val token = "$key:$tokenValue"
+        val tokenPattern = Regex("""(?:[^\s"]+:"[^"]*"|[^\s]+)""")
+        val tokens = tokenPattern.findAll(query).map { it.value }.toMutableList()
+        val prefix = "$key:"
+        val index = tokens.indexOfFirst { it.startsWith(prefix, ignoreCase = true) }
+        val alreadyPresent = index >= 0 && tokens[index].equals(token, ignoreCase = true)
+        if (index >= 0) {
+            if (alreadyPresent) tokens.removeAt(index) else tokens[index] = token
+        } else {
+            tokens += token
+        }
+        setGallerySearchQuery(tokens.joinToString(" "))
+    }
+    fun addGallerySearchTerm(term: String) {
+        val clean = term.trim()
+        if (clean.isBlank()) return
+        val query = _uiState.value.gallerySearchQuery.trim()
+        val tokens = query.split(Regex("""\s+""")).filter { it.isNotBlank() }
+        if (tokens.any { it.equals(clean, ignoreCase = true) }) {
+            setGallerySearchQuery(tokens.filterNot { it.equals(clean, ignoreCase = true) }.joinToString(" "))
+        } else {
+            setGallerySearchQuery(if (query.isBlank()) clean else "$query $clean")
+        }
     }
 
     fun setGallerySearchActive(active: Boolean) {

@@ -503,51 +503,6 @@ fun HomeScreen(
                     }
                 }
 
-                // Quick Tiles
-                item(key = "home_quick_tiles") {
-                    Text(
-                        text = "Quick Tiles",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    val quickTiles = listOf(
-                        CategoryType.IMAGES to (Icons.Default.Image to ColorImages),
-                        CategoryType.VIDEOS to (Icons.Default.Movie to ColorVideos),
-                        CategoryType.AUDIO to (Icons.Default.AudioFile to ColorAudio),
-                        CategoryType.DOCUMENTS to (Icons.Default.Description to ColorDocuments),
-                        CategoryType.ARCHIVES to (Icons.Default.Archive to ColorArchives),
-                        CategoryType.APKS to (Icons.Default.VideogameAsset to ColorApks),
-                        CategoryType.DOWNLOADS to (Icons.Default.Download to ColorDownloads)
-                    )
-
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        quickTiles.chunked(2).forEach { rowItems ->
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                rowItems.forEach { (cat, visual) ->
-                                    val count = uiState.categoryCounts[cat] ?: 0
-                                    Box(modifier = Modifier.weight(1f)) {
-                                        CategoryCard(
-                                            title = cat.displayName,
-                                            count = count,
-                                            icon = visual.first,
-                                            tint = visual.second,
-                                            onClick = { viewModel.selectCategory(cat) }
-                                        )
-                                    }
-                                }
-                                if (rowItems.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
     }

@@ -221,7 +221,10 @@ class FileRepository(private val context: Context) {
             if (!force && currentStatus?.isIndexing == true) {
                 return@withContext currentCount
             }
-            if (!force && currentCount > 0 && currentStatus != null && (System.currentTimeMillis() - currentStatus.lastIndexedTimestamp) < 300_000) {
+            // Reuse the persistent Room index across launches and navigation.
+            // Full indexing is only automatic when the index is empty; forced
+            // reindexing remains available as an explicit maintenance action.
+            if (!force && currentCount > 0) {
                 return@withContext currentCount
             }
 
@@ -727,37 +730,55 @@ class FileRepository(private val context: Context) {
             // 2. Check Room DB if fully indexed
             try {
                 val roomCount = fileIndexDao.getCountByParent(dirPath)
-                val dirFileCount = dir.list()?.size ?: 0
-                if (roomCount > 0 && roomCount == dirFileCount) {
-                    val entities = fileIndexDao.getFilesByParentPaged(dirPath, limit = pageSize, offset = page * pageSize)
-                    val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
-                    val items = entities
+                val indexedDirectory = fileIndexDao.hasIndexedPath(dirPath)
+                if (roomCount > 0 || indexedDirectory) {
+                    val allIndexed = fileIndexDao.getFilesByParent(dirPath)
                         .filter { showHidden || !it.name.startsWith(".") }
-                        .map { entity ->
-                            FileItem(
-                                name = entity.name,
-                                path = entity.path,
-                                size = entity.size,
-                                lastModified = entity.lastModified,
-                                isDirectory = entity.isDirectory,
-                                mimeType = entity.mimeType,
-                                extension = entity.extension,
-                                isFavorite = favSet.contains(entity.path),
-                                childCount = entity.childCount,
-                                uri = Uri.fromFile(File(entity.path))
-                            )
-                        }
-                    val sorted = sortFileList(items, sortOption)
+                    val totalCount = allIndexed.size
                     val offset = page * pageSize
+                    val sortedIndexed = allIndexed.sortedWith(
+                        compareBy<IndexedFileEntity> { !it.isDirectory }
+                            .thenComparator { a, b ->
+                                when (sortOption) {
+                                    SortOption.NAME_ASC -> String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name)
+                                    SortOption.NAME_DESC -> String.CASE_INSENSITIVE_ORDER.reversed().compare(a.name, b.name)
+                                    SortOption.SIZE_ASC -> a.size.compareTo(b.size)
+                                    SortOption.SIZE_DESC -> b.size.compareTo(a.size)
+                                    SortOption.DATE_ASC -> a.lastModified.compareTo(b.lastModified)
+                                    SortOption.DATE_DESC -> b.lastModified.compareTo(a.lastModified)
+                                    SortOption.TYPE -> {
+                                        val extCompare = String.CASE_INSENSITIVE_ORDER.compare(a.extension, b.extension)
+                                        if (extCompare != 0) extCompare else String.CASE_INSENSITIVE_ORDER.compare(a.name, b.name)
+                                    }
+                                }
+                            }
+                    )
+                    val entities = sortedIndexed.drop(offset).take(pageSize)
+                    val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+                    val items = entities.map { entity ->
+                        val file = File(entity.path)
+                        FileItem(
+                            name = entity.name,
+                            path = entity.path,
+                            size = entity.size,
+                            lastModified = entity.lastModified,
+                            isDirectory = entity.isDirectory,
+                            mimeType = entity.mimeType,
+                            extension = entity.extension,
+                            isFavorite = favSet.contains(entity.path),
+                            childCount = if (entity.isDirectory) fastChildCount(file) else 0,
+                            uri = Uri.fromFile(file)
+                        )
+                    }
                     val elapsed = System.currentTimeMillis() - startTimeMs
                     if (page == 0) PerformanceMonitor.recordFolderOpen(elapsed)
                     PerformanceMonitor.recordPagedLoad(elapsed)
                     return@withContext PagedDirectoryResult(
-                        items = sorted,
-                        totalCount = roomCount,
+                        items = items,
+                        totalCount = totalCount,
                         page = page,
                         pageSize = pageSize,
-                        hasMore = (offset + pageSize) < roomCount
+                        hasMore = (offset + pageSize) < totalCount
                     )
                 }
             } catch (e: Exception) {
@@ -815,7 +836,7 @@ class FileRepository(private val context: Context) {
                     }
                     size = if (isDir) 0L else file.length()
                     lastModified = file.lastModified()
-                    childCount = 0 // Defer subdirectory listing during fast paged browse
+                    childCount = if (isDir) fastChildCount(file) else 0
 
                     statCache[file.absolutePath] = CachedStat(
                         size = size,
