@@ -240,7 +240,7 @@ fun GalleryScreen(
                                 )
                             }
                             IconButton(onClick = {
-                                val nextCols = if (uiState.galleryColumns >= 5) 2 else uiState.galleryColumns + 1
+                                val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
                                 viewModel.setGalleryColumns(nextCols)
                             }) {
                                 Icon(Icons.Default.GridView, contentDescription = "Change grid columns")
@@ -421,6 +421,8 @@ fun GalleryScreen(
             }
         }
     }
+}
+
 }
 
 @Composable
