@@ -827,6 +827,20 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         setGallerySearchQuery("")
     }
 
+    fun setGallerySearchActive(active: Boolean) {
+        _uiState.update { it.copy(gallerySearchActive = active, gallerySearchQuery = if (active) it.gallerySearchQuery else "") }
+        gallerySearchFlow.value = if (active) _uiState.value.gallerySearchQuery else ""
+    }
+
+    fun setGallerySearchQuery(query: String) {
+        _uiState.update { it.copy(gallerySearchQuery = query) }
+        gallerySearchFlow.value = query
+    }
+
+    fun clearGallerySearch() {
+        setGallerySearchQuery("")
+    }
+
     fun setGalleryFilter(filter: String) {
         _uiState.update { it.copy(galleryFilter = filter) }
 
