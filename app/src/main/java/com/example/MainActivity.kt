@@ -59,6 +59,7 @@ import com.example.ui.screens.FileExplorerScreen
 import com.example.ui.screens.FilePropertiesDialog
 import com.example.ui.screens.FullscreenMediaViewer
 import com.example.ui.screens.GalleryScreen
+import com.example.ui.screens.GallerySearchScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.TextEditorScreen
 import com.example.ui.screens.ZipViewerDialog
@@ -112,6 +113,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var gallerySearchPageVisible by rememberSaveable { mutableStateOf(false) }
 
     var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
     var showAllFilesDialog by rememberSaveable {
@@ -189,7 +191,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = {
+        bottomBar = if (gallerySearchPageVisible && uiState.currentTab == MainTab.GALLERY) null else {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -281,9 +283,24 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                             uiState = uiState,
                             viewModel = viewModel
                         )
-                        MainTab.GALLERY -> GalleryScreen(
+                        MainTab.GALLERY -> if (gallerySearchPageVisible) {
+                            GallerySearchScreen(
+                                uiState = uiState,
+                                viewModel = viewModel,
+                                onClose = {
+                                    gallerySearchPageVisible = false
+                                    if (uiState.gallerySearchQuery.isNotBlank()) {
+                                        viewModel.submitGallerySearch()
+                                    }
+                                }
+                            )
+                        } else GalleryScreen(
                             uiState = uiState,
                             viewModel = viewModel,
+                            onOpenSearch = {
+                                gallerySearchPageVisible = true
+                                viewModel.setGallerySearchQuery("")
+                            },
                             onRequestMediaLocationPermission = {
                                 if (
                                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
