@@ -345,3 +345,28 @@ Next capability groups:
 - Search fullscreen navigation now stays inside the exact search result set.
 - Legacy getMediaItems()/getAllMediaData() Gallery-era materialization was removed; category media queries are bounded.
 - ACCESS_MEDIA_LOCATION was removed from initial permissions and is requested only when GPS/location search requires it.
+
+
+### 2026-09-28 — Gallery header/performance pass
+Status: **IMPLEMENTED; build validation pending**
+
+Implemented:
+- Replaced the large persistent Gallery search field with a compact horizontal Search control.
+- Search remains Aves-inspired and in-place: opening it reveals the full-width input plus recent searches, suggestions, and quick filters.
+- Filter, Sort, and Group controls now expose their active state in the header.
+- Search suggestion/date/GPS chips now toggle off when tapped while active.
+- Gallery Paging startup work reduced to a 60-item initial/page size, 15-item prefetch distance, and a bounded 180-item window.
+- Gallery thumbnail requests now use stable URI-based Coil memory/disk cache keys.
+
+Performance invariant preserved:
+- Gallery remains Paging 3 + MediaStore based.
+- No normal Gallery browse path materializes the complete media library.
+- Thumbnail loading remains independent of metadata-heavy work.
+
+Next validation:
+- Compare Gallery tab open/first-thumbnail latency on a real device.
+- Exercise repeated tab switches, search dropdown open/close, filter toggles, sort/group changes, and long scrolling.
+- If device measurements show remaining startup contention, inspect background indexing and non-Gallery ViewModel startup work before adding more caching.
+
+### File Explorer header follow-up plan
+The File Explorer header will reuse the same compact control language after this Gallery pass is build-certified: compact Search, adaptive Sort, Group and Filter controls, active-state toggle semantics, preserved breadcrumbs, and the existing paged/cached directory loader.

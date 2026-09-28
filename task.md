@@ -427,3 +427,25 @@ Last updated: 2026-09-27
 - [x] Keep existing search result behavior and category drill-down navigation intact.
 - [x] Rename the recent section to "Recent Items".
 - [x] Present the existing file categories as "Quick Tiles".
+
+
+## 2026-09-28 — Gallery compact header + performance pass
+- [x] Replace the large always-visible Gallery search field with a compact single-line Search button.
+- [x] Keep search as an in-place dropdown with the full-width input, recent searches, suggestions, and quick filters.
+- [x] Make Filter, Sort, and Group controls contextual: show the active media/date/GPS filter, current sort, and current grouping.
+- [x] Make Gallery search suggestion and quick-filter chips toggleable: tapping an active filter removes it instead of re-applying it.
+- [x] Reduce Gallery Paging initial/page size from 120 to 60, keep a bounded three-page window, and lower prefetch distance.
+- [x] Stabilize Coil memory/disk cache keys for Gallery thumbnails.
+- [ ] Device-measure Gallery open latency before/after this pass.
+- [ ] Validate Gallery search/filter/group/sort interactions on a real device.
+
+## File Explorer — Adaptive header plan
+- [ ] Replace the File Explorer title/search-heavy header with the same compact single-line control pattern.
+- [ ] Search: compact button -> in-place full-width search dropdown for folder-scoped search.
+- [ ] Sort: adaptive button showing the active SortOption instead of a generic icon.
+- [ ] Group: add an adaptive grouping control for Name/Type/Date/Size where supported without changing the storage-first architecture.
+- [ ] Filters: expose contextual file-type/hidden/favorites filters as a compact adaptive control; tapping an active filter toggles it off.
+- [ ] View mode: retain the current list/grid/compact modes while making the control reflect the active mode.
+- [ ] Preserve breadcrumbs and selection mode as separate navigation/action surfaces.
+- [ ] Keep File Explorer page loading and folder/stat caches; do not introduce a whole-storage pre-index just for header controls.
+- [ ] Add the equivalent scroll-reactive header collapse after the Gallery version is device-validated.
