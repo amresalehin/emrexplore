@@ -241,7 +241,8 @@ class MediaRepository(context: Context) {
     fun searchPager(
         query: String,
         filter: MediaFilter,
-        favoritesOnly: Boolean = false
+        favoritesOnly: Boolean = false,
+        sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC
     ): Flow<PagingData<com.example.data.model.MediaItem>> {
         return Pager(
             config = PagingConfig(
@@ -256,13 +257,17 @@ class MediaRepository(context: Context) {
                     appContext,
                     query,
                     filter,
-                    favoritesOnly = favoritesOnly
+                    favoritesOnly = favoritesOnly,
+                    sort = sort
                 )
             }
         ).flow
     }
 
-    fun pager(filter: MediaFilter): Flow<PagingData<com.example.data.model.MediaItem>> {
+    fun pager(
+        filter: MediaFilter,
+        sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC
+    ): Flow<PagingData<com.example.data.model.MediaItem>> {
         return Pager(
             config = PagingConfig(
                 pageSize = MediaStorePagingSource.MAX_PAGE_SIZE,
@@ -272,7 +277,7 @@ class MediaRepository(context: Context) {
                 enablePlaceholders = false
             ),
             pagingSourceFactory = {
-                MediaStorePagingSource(appContext, filter)
+                MediaStorePagingSource(appContext, filter, sort)
             }
         ).flow
     }
