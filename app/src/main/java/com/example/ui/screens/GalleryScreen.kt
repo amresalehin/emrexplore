@@ -1,4 +1,18 @@
 package com.example.ui.screens
+import kotlin.math.roundToInt
+import kotlin.math.abs
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.consume
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.Canvas
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.AnimatedVisibility
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -106,6 +120,25 @@ fun GalleryScreen(
     val scope = rememberCoroutineScope()
     val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+    val galleryGridState = rememberLazyGridState()
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    LaunchedEffect(galleryGridState) {
+        var lastIndex = 0
+        var lastOffset = 0
+        snapshotFlow {
+            galleryGridState.firstVisibleItemIndex to galleryGridState.firstVisibleItemScrollOffset
+        }.collect { (index, offset) ->
+            if (index == 0 && offset < 12) {
+                chromeVisible = true
+            } else if (index != lastIndex || abs(offset - lastOffset) > 8) {
+                val scrollingUp = index < lastIndex || (index == lastIndex && offset < lastOffset)
+                chromeVisible = scrollingUp
+            }
+            lastIndex = index
+            lastOffset = offset
+        }
+    }
 
     LaunchedEffect(uiState.gallerySearchQuery) {
         val query = uiState.gallerySearchQuery.lowercase(Locale.US)
@@ -135,8 +168,12 @@ fun GalleryScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
 
-        // Top Header
-        Surface(
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically()
+        ) {
+            Surface(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 2.dp,
             modifier = Modifier.fillMaxWidth()
@@ -268,6 +305,8 @@ fun GalleryScreen(
                     }
                 }
             }
+        }
+
         }
 
         // Aves-style contextual selection bar. Selection is limited to explicitly selected items.
