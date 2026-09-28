@@ -214,42 +214,14 @@ fun HomeScreen(
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                 } else {
-                    // Main Home Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Home",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        IconButton(onClick = {
-                            viewModel.loadStorageStats()
-                            viewModel.loadFiles()
-                        }) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                        }
-
-                        IconButton(onClick = {
-                            viewModel.setShowPreferencesDialog(true)
-                        }) {
-                            Icon(Icons.Default.Tune, contentDescription = "Explorer Preferences")
-                        }
-                    }
-
-                    // Prominent Home Tab Search Bar
+                    // Home Search Bar
                     Surface(
                         shape = RoundedCornerShape(28.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         tonalElevation = 1.dp,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
                             .testTag("home_search_bar")
                     ) {
                         Row(
@@ -299,46 +271,6 @@ fun HomeScreen(
                                     )
                                 }
                             }
-                        }
-                    }
-
-                    // Search Category Filter Chips
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("home_search_filter_chips")
-                    ) {
-                        item {
-                            FilterChip(
-                                selected = uiState.homeSearchCategoryFilter == null,
-                                onClick = { viewModel.setHomeSearchCategoryFilter(null) },
-                                label = { Text("All") },
-                                leadingIcon = if (uiState.homeSearchCategoryFilter == null) {
-                                    {
-                                        Icon(
-                                            Icons.Default.Search,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                } else null,
-                                colors = FilterChipDefaults.filterChipColors(),
-                                modifier = Modifier.testTag("search_filter_all")
-                            )
-                        }
-                        items(CategoryType.entries) { cat ->
-                            val isSelected = uiState.homeSearchCategoryFilter == cat
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    viewModel.setHomeSearchCategoryFilter(if (isSelected) null else cat)
-                                },
-                                label = { Text(cat.displayName) },
-                                colors = FilterChipDefaults.filterChipColors(),
-                                modifier = Modifier.testTag("search_filter_${cat.name.lowercase()}")
-                            )
                         }
                     }
                 }
@@ -492,121 +424,96 @@ fun HomeScreen(
                 }
             }
         } else {
-            // Unified Home Dashboard
+            // Minimal Home Dashboard: Search Bar + Recent Items + Quick Tiles
             LazyColumn(
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-
-                // 1. Device Storage Overview Card
-                item {
-                    val stats = uiState.storageStats
-                    val usedPercent = if (stats.totalBytes > 0) {
-                        ((stats.usedBytes.toDouble() / stats.totalBytes.toDouble()) * 100).toInt()
-                    } else 0
-
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Storage,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "Device Storage",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Text(
-                                    text = "$usedPercent% used",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            val progressFraction = if (stats.totalBytes > 0) {
-                                (stats.usedBytes.toFloat() / stats.totalBytes.toFloat()).coerceIn(0f, 1f)
-                            } else 0f
-
-                            LinearProgressIndicator(
-                                progress = { progressFraction },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(12.dp)
-                                    .clip(RoundedCornerShape(6.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surface
+                // Recent Items
+                if (uiState.recentsList.isNotEmpty()) {
+                    item(key = "home_recent_items") {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = "Used: ${formatFileSize(stats.usedBytes)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Free: ${formatFileSize(stats.freeBytes)} / ${formatFileSize(stats.totalBytes)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
-                            Spacer(modifier = Modifier.height(14.dp))
-
                             Text(
-                                text = "Media & Files Breakdown",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold
+                                text = "Recent Items",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                BreakdownRow("Images", stats.imagesBytes, ColorImages)
-                                BreakdownRow("Videos", stats.videosBytes, ColorVideos)
-                                BreakdownRow("Audio", stats.audioBytes, ColorAudio)
-                                BreakdownRow("Documents", stats.documentsBytes, ColorDocuments)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("home_recent_items")
+                        ) {
+                            items(
+                                items = uiState.recentsList,
+                                key = { it.path }
+                            ) { recent ->
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    ),
+                                    modifier = Modifier
+                                        .width(180.dp)
+                                        .clickable {
+                                            val fileItem = FileItem(
+                                                name = recent.name,
+                                                path = recent.path,
+                                                size = recent.size,
+                                                lastModified = recent.lastOpenedTimestamp,
+                                                isDirectory = false,
+                                                mimeType = recent.mimeType
+                                            )
+                                            viewModel.openFile(fileItem)
+                                        }
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(
+                                            text = recent.name,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.SemiBold
+                                            ),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = formatDate(recent.lastOpenedTimestamp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
-                // 2. Categories Section
-                item {
+                // Quick Tiles
+                item(key = "home_quick_tiles") {
                     Text(
-                        text = "Categories",
+                        text = "Quick Tiles",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    val categories = listOf(
+                    val quickTiles = listOf(
                         CategoryType.IMAGES to (Icons.Default.Image to ColorImages),
                         CategoryType.VIDEOS to (Icons.Default.Movie to ColorVideos),
                         CategoryType.AUDIO to (Icons.Default.AudioFile to ColorAudio),
@@ -617,7 +524,7 @@ fun HomeScreen(
                     )
 
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        categories.chunked(2).forEach { rowItems ->
+                        quickTiles.chunked(2).forEach { rowItems ->
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -641,377 +548,8 @@ fun HomeScreen(
                         }
                     }
                 }
-
-                // 3. Recently Opened Section
-                if (uiState.recentsList.isNotEmpty()) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.History,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Recently Opened",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            items(uiState.recentsList) { recent ->
-                                Card(
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                    modifier = Modifier
-                                        .width(180.dp)
-                                        .clickable {
-                                            val fileItem = FileItem(
-                                                name = recent.name,
-                                                path = recent.path,
-                                                size = recent.size,
-                                                lastModified = recent.lastOpenedTimestamp,
-                                                isDirectory = false,
-                                                mimeType = recent.mimeType
-                                            )
-                                            viewModel.openFile(fileItem)
-                                        }
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text(
-                                            text = recent.name,
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = formatDate(recent.lastOpenedTimestamp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 4. Favorites & Starred Section
-                if (uiState.favoritesList.isNotEmpty()) {
-                    item {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Bookmark,
-                                contentDescription = null,
-                                tint = Color(0xFFFBBF24),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = "Favorites & Starred",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            uiState.favoritesList.forEach { fav ->
-                                Card(
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            if (fav.isDirectory) {
-                                                viewModel.setTab(MainTab.FILES)
-                                                viewModel.navigateToDirectory(fav.path)
-                                            } else {
-                                                val fileItem = FileItem(
-                                                    name = fav.name,
-                                                    path = fav.path,
-                                                    size = 0L,
-                                                    lastModified = fav.timestamp,
-                                                    isDirectory = false,
-                                                    mimeType = fav.mimeType,
-                                                    isFavorite = true
-                                                )
-                                                viewModel.openFile(fileItem)
-                                            }
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = fav.name,
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                            modifier = Modifier.weight(1f),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = if (fav.isDirectory) "Folder" else "File",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 5. Recycle Bin (Trash)
-                item {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                    Text(
-                                        text = "Recycle Bin",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                if (uiState.trashList.isNotEmpty()) {
-                                    TextButton(
-                                        onClick = { showEmptyTrashConfirm = true },
-                                        colors = ButtonDefaults.textButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.error
-                                        )
-                                    ) {
-                                        Text("Empty Bin")
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            if (uiState.trashList.isEmpty()) {
-                                Text(
-                                    text = "Recycle Bin is empty. Deleted files appear here before permanent removal.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            } else {
-                                Text(
-                                    text = "${uiState.trashList.size} item(s) in recycle bin",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(modifier = Modifier.height(12.dp))
-
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    uiState.trashList.forEach { trashItem ->
-                                        TrashItemRow(
-                                            item = trashItem,
-                                            onRestore = { viewModel.restoreTrashItem(trashItem) },
-                                            onDeleteForever = { viewModel.permanentlyDeleteTrash(trashItem) }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 6. Preferences & Room Index Status
-                item {
-                    Card(
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(18.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = "Preferences & Index",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                TextButton(
-                                    onClick = { viewModel.setShowPreferencesDialog(true) }
-                                ) {
-                                    Text("Preferences")
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Show Hidden Files",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                                    )
-                                    Text(
-                                        text = "Show files and folders starting with '.'",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Switch(
-                                    checked = uiState.showHidden,
-                                    onCheckedChange = { viewModel.toggleShowHidden() }
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Fast SQLite Indexed Search",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                                    )
-                                    Text(
-                                        text = "Query Room database for sub-millisecond search",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Switch(
-                                    checked = uiState.isFastSearchRoomPowered,
-                                    onCheckedChange = { viewModel.toggleFastSearch() }
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Local Storage Index Status
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Storage,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Column {
-                                        Text(
-                                            text = "Room Index: ${uiState.indexedCount} files",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                                        )
-                                        Text(
-                                            text = uiState.indexStatusMessage,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-
-                                Button(
-                                    onClick = { viewModel.reindexStorage(force = true) },
-                                    enabled = !uiState.isIndexing,
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (uiState.isIndexing) "Indexing..." else "Re-index")
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-                            HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Column {
-                                    Text(
-                                        text = "Fossify Files & Gallery",
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
-                                    )
-                                    Text(
-                                        text = "Unified open-source file explorer and gallery suite.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
             }
         }
-    }
-
     if (showEmptyTrashConfirm) {
         AlertDialog(
             onDismissRequest = { showEmptyTrashConfirm = false },
