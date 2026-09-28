@@ -68,8 +68,8 @@ jobs:
         run: |
           set -e
           ls -lh app/build/outputs/apk/debug/*.apk
-          file app/build/outputs/apk/beta/*.apk
-          sha256sum app/build/outputs/apk/beta/*.apk
+          file app/build/outputs/apk/debug/*.apk
+          sha256sum app/build/outputs/apk/debug/*.apk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
