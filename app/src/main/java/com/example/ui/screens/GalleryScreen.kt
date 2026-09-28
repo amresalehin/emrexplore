@@ -177,8 +177,8 @@ fun GalleryScreen(
         }
     }
 
-    LaunchedEffect(uiState.gallerySearchQuery) {
-        val query = uiState.gallerySearchQuery.lowercase(Locale.US)
+    LaunchedEffect(uiState.gallerySearchActive, uiState.gallerySearchSubmittedQuery) {
+        val query = uiState.gallerySearchSubmittedQuery.lowercase(Locale.US)
         if (listOf("gps:", "near:", "location:").any { query.contains(it) }) {
             onRequestMediaLocationPermission()
         }
@@ -193,7 +193,9 @@ fun GalleryScreen(
 
     val albumPagedMedia = if (selectedAlbumId != null) {
         val albumFlow = remember(selectedAlbumId) {
-            MediaRepository(context).albumPager(selectedAlbumId)
+            MediaRepository(context).albumPager(selectedAlbumId).map { pagingData ->
+                pagingData.map { GalleryGridItem.Media(it) }
+            }
         }
         albumFlow.collectAsLazyPagingItems()
     } else null
@@ -437,8 +439,6 @@ fun GalleryScreen(
                             }
                         }
                     }
-
-                    }
                 }
             }
         }
@@ -487,7 +487,7 @@ fun GalleryScreen(
                     onItemClick = { item ->
                         if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                         else {
-                            val loaded = albumItems.itemSnapshotList.items.filterNotNull()
+                            val loaded = albumItems.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
                             viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
                         }
                     },
@@ -505,7 +505,7 @@ fun GalleryScreen(
                         onItemClick = { item ->
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                             else {
-                            val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
+                            val loaded = pagedMedia.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
                             viewModel.openFullscreenMedia(
                                 item,
                                 loaded,
