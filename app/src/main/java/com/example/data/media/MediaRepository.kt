@@ -117,6 +117,22 @@ class MediaRepository(context: Context) {
         }
     }
 
+
+    fun searchPager(query: String, filter: MediaFilter): Flow<PagingData<com.example.data.model.MediaItem>> {
+        return Pager(
+            config = PagingConfig(
+                pageSize = MediaStorePagingSource.MAX_PAGE_SIZE,
+                initialLoadSize = MediaStorePagingSource.MAX_PAGE_SIZE,
+                prefetchDistance = 30,
+                maxSize = MediaStorePagingSource.MAX_PAGE_SIZE * 3,
+                enablePlaceholders = false
+            ),
+            pagingSourceFactory = {
+                MediaSearchPagingSource(appContext, query, filter)
+            }
+        ).flow
+    }
+
     fun pager(filter: MediaFilter): Flow<PagingData<com.example.data.model.MediaItem>> {
         return Pager(
             config = PagingConfig(
