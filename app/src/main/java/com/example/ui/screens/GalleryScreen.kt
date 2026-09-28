@@ -65,6 +65,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import java.util.Locale
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.paging.LoadState
@@ -98,12 +99,20 @@ import com.example.ui.viewmodel.UnifiedViewModel
 fun GalleryScreen(
     uiState: UiState,
     viewModel: UnifiedViewModel,
+    onRequestMediaLocationPermission: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val selectedAlbumId = uiState.selectedAlbum?.id
     val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+
+    LaunchedEffect(uiState.gallerySearchQuery) {
+        val query = uiState.gallerySearchQuery.lowercase(Locale.US)
+        if (listOf("gps:", "near:", "location:").any { query.contains(it) }) {
+            onRequestMediaLocationPermission()
+        }
+    }
     var discoveredAlbums by remember { mutableStateOf(uiState.mediaAlbums) }
 
     LaunchedEffect(uiState.gallerySubTab) {
@@ -322,12 +331,20 @@ fun GalleryScreen(
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                             else {
                             val loaded = pagedMedia.itemSnapshotList.items.filterNotNull()
-                            viewModel.openFullscreenMedia(item, loaded, when (uiState.galleryFilter) {
-                                "PHOTOS" -> FullscreenMediaSource.PHOTOS
-                                "VIDEOS" -> FullscreenMediaSource.VIDEOS
-                                "FAVORITES" -> FullscreenMediaSource.FAVORITES
-                                else -> FullscreenMediaSource.ALL
-                            })
+                            viewModel.openFullscreenMedia(
+                                item,
+                                loaded,
+                                if (uiState.gallerySearchQuery.isNotBlank()) {
+                                    FullscreenMediaSource.SEARCH
+                                } else {
+                                    when (uiState.galleryFilter) {
+                                        "PHOTOS" -> FullscreenMediaSource.PHOTOS
+                                        "VIDEOS" -> FullscreenMediaSource.VIDEOS
+                                        "FAVORITES" -> FullscreenMediaSource.FAVORITES
+                                        else -> FullscreenMediaSource.ALL
+                                    }
+                                }
+                            )
                             }
                         },
                         onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
