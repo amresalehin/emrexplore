@@ -5,6 +5,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.Canvas
@@ -90,10 +92,13 @@ import java.util.Locale
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.paging.LoadState
+import androidx.paging.insertSeparators
+import androidx.paging.map
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import coil.request.ImageRequest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,6 +109,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -126,9 +132,9 @@ fun GalleryScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val selectedAlbumId = uiState.selectedAlbum?.id
-    val pagedMedia = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
     val galleryGridState = rememberLazyGridState()
     var chromeVisible by remember { mutableStateOf(true) }
     var searchDropdownVisible by remember { mutableStateOf(false) }
@@ -136,6 +142,23 @@ fun GalleryScreen(
     var sortMenuVisible by remember { mutableStateOf(false) }
     var groupMenuVisible by remember { mutableStateOf(false) }
     var groupBy by remember { mutableStateOf("Month") }
+
+    val groupedPagingFlow = remember(groupBy) {
+        viewModel.galleryPagingFlow.map { pagingData ->
+            val mediaData = pagingData.map { GalleryGridItem.Media(it) }
+            if (groupBy == "None") {
+                mediaData
+            } else {
+                mediaData.insertSeparators { before, after ->
+                    val current = after?.item ?: return@insertSeparators null
+                    val currentKey = galleryGroupKey(current.dateAdded, groupBy)
+                    val previousKey = before?.item?.let { galleryGroupKey(it.dateAdded, groupBy) }
+                    if (currentKey != previousKey) GalleryGridItem.Header(currentKey) else null
+                }
+            }
+        }
+    }
+    val pagedMedia = groupedPagingFlow.collectAsLazyPagingItems()
 
     LaunchedEffect(galleryGridState) {
         var lastIndex = 0
@@ -216,61 +239,121 @@ fun GalleryScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.weight(1f).height(48.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxSize().padding(start = 12.dp, end = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            Box(modifier = Modifier.weight(1f)) {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.fillMaxWidth().height(48.dp)
                                 ) {
-                                    Icon(Icons.Default.Search, contentDescription = null)
-                                    Spacer(Modifier.width(8.dp))
-                                    BasicTextField(
-                                        value = uiState.gallerySearchQuery,
-                                        onValueChange = viewModel::setGallerySearchQuery,
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f).onFocusChanged {
-                                            if (it.isFocused) searchDropdownVisible = true
-                                        },
-                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        ),
-                                        decorationBox = { innerTextField ->
-                                            if (uiState.gallerySearchQuery.isBlank()) {
-                                                Text(
-                                                    if (uiState.gallerySubTab == GallerySubTab.ALBUMS) "Search albums" else "Search photos & videos",
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Row(
+                                        modifier = Modifier.fillMaxSize().padding(start = 12.dp, end = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Search, contentDescription = null)
+                                        Spacer(Modifier.width(8.dp))
+                                        BasicTextField(
+                                            value = uiState.gallerySearchQuery,
+                                            onValueChange = viewModel::setGallerySearchQuery,
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                            keyboardActions = KeyboardActions(
+                                                onSearch = {
+                                                    viewModel.submitGallerySearch()
+                                                    searchDropdownVisible = false
+                                                    keyboardController?.hide()
+                                                }
+                                            ),
+                                            modifier = Modifier.weight(1f).onFocusChanged {
+                                                if (it.isFocused) searchDropdownVisible = true
+                                            },
+                                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            decorationBox = { innerTextField ->
+                                                if (uiState.gallerySearchQuery.isBlank()) {
+                                                    Text(
+                                                        if (uiState.gallerySubTab == GallerySubTab.ALBUMS) "Search albums" else "Search photos & videos",
+                                                        style = MaterialTheme.typography.bodyLarge,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                innerTextField()
+                                            }
+                                        )
+                                        if (uiState.gallerySearchQuery.isNotBlank()) {
+                                            IconButton(onClick = {
+                                                viewModel.clearGallerySearch()
+                                                searchDropdownVisible = false
+                                            }) {
+                                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                            }
+                                        }
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = searchDropdownVisible && uiState.selectedAlbum == null,
+                                    onDismissRequest = { searchDropdownVisible = false }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.width(320.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            "Suggestions",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            listOf(
+                                                "year:" + yearToken(),
+                                                "month:" + monthToken(),
+                                                "gps:true",
+                                                "near:"
+                                            ).forEach { suggestion ->
+                                                FilterChip(
+                                                    selected = uiState.gallerySearchQuery.contains(suggestion),
+                                                    onClick = {
+                                                        val q = uiState.gallerySearchQuery.trim()
+                                                        viewModel.setGallerySearchQuery(if (q.isBlank()) suggestion else q + " " + suggestion)
+                                                    },
+                                                    label = { Text(suggestion) }
                                                 )
                                             }
-                                            innerTextField()
                                         }
+                                        Text(
+                                            "Press Search to apply",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Box {
+                                IconButton(onClick = {
+                                    viewModel.setGallerySubTab(
+                                        if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS
+                                        else GallerySubTab.TIMELINE
                                     )
-                                    if (uiState.gallerySearchQuery.isNotBlank()) {
-                                        IconButton(onClick = viewModel::clearGallerySearch) {
-                                            Icon(Icons.Default.Close, contentDescription = "Clear search")
-                                        }
-                                    }
-                                    IconButton(onClick = {
-                                        viewModel.setGallerySubTab(
-                                            if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS
-                                            else GallerySubTab.TIMELINE
-                                        )
-                                        searchDropdownVisible = false
-                                    }) {
-                                        Icon(
-                                            if (uiState.gallerySubTab == GallerySubTab.TIMELINE) Icons.Default.PhotoLibrary else Icons.Default.Collections,
-                                            contentDescription = if (uiState.gallerySubTab == GallerySubTab.TIMELINE) "Albums" else "Photos and videos"
-                                        )
-                                    }
-                                    IconButton(onClick = {
-                                        val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
-                                        viewModel.setGalleryColumns(nextCols)
-                                    }) {
-                                        Icon(Icons.Default.GridView, contentDescription = "Change grid columns")
-                                    }
+                                    searchDropdownVisible = false
+                                }) {
+                                    Icon(
+                                        if (uiState.gallerySubTab == GallerySubTab.TIMELINE) Icons.Default.PhotoLibrary else Icons.Default.Collections,
+                                        contentDescription = if (uiState.gallerySubTab == GallerySubTab.TIMELINE) "Albums" else "Photos and videos"
+                                    )
+                                }
+                            }
+
+                            Box {
+                                IconButton(onClick = {
+                                    val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
+                                    viewModel.setGalleryColumns(nextCols)
+                                }) {
+                                    Icon(Icons.Default.GridView, contentDescription = "Change grid columns")
                                 }
                             }
 
@@ -290,6 +373,31 @@ fun GalleryScreen(
                                     })
                                     DropdownMenuItem(text = { Text("Favorites") }, onClick = {
                                         viewModel.setGalleryFilter("FAVORITES"); filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("Today") }, onClick = {
+                                        viewModel.setGallerySearchQuery(replaceSearchOperators(uiState.gallerySearchQuery, setOf("date", "taken", "year", "month", "after", "before"), "date:" + todayToken()))
+                                        viewModel.submitGallerySearch()
+                                        filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("This month") }, onClick = {
+                                        viewModel.setGallerySearchQuery(replaceSearchOperators(uiState.gallerySearchQuery, setOf("date", "taken", "year", "month", "after", "before"), "month:" + monthToken()))
+                                        viewModel.submitGallerySearch()
+                                        filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("This year") }, onClick = {
+                                        viewModel.setGallerySearchQuery(replaceSearchOperators(uiState.gallerySearchQuery, setOf("date", "taken", "year", "month", "after", "before"), "year:" + yearToken()))
+                                        viewModel.submitGallerySearch()
+                                        filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("With GPS") }, onClick = {
+                                        viewModel.setGallerySearchQuery(replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:true"))
+                                        viewModel.submitGallerySearch()
+                                        filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("No GPS") }, onClick = {
+                                        viewModel.setGallerySearchQuery(replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:false"))
+                                        viewModel.submitGallerySearch()
+                                        filterMenuVisible = false
                                     })
                                 }
                             }
@@ -330,55 +438,6 @@ fun GalleryScreen(
                         }
                     }
 
-                    AnimatedVisibility(
-                        visible = searchDropdownVisible && uiState.selectedAlbum == null,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    "Suggestions",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    listOf("year:${yearToken()}", "month:${monthToken()}", "gps:true", "near:").forEach { suggestion ->
-                                        FilterChip(
-                                            selected = uiState.gallerySearchQuery.contains(suggestion),
-                                            onClick = {
-                                                val q = uiState.gallerySearchQuery.trim()
-                                                viewModel.setGallerySearchQuery(if (q.isBlank()) suggestion else "$q $suggestion")
-                                            },
-                                            label = { Text(suggestion) }
-                                        )
-                                    }
-                                }
-                                Text(
-                                    "Filters",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                SearchQuickFilterRow(uiState = uiState, viewModel = viewModel)
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End
-                                ) {
-                                    TextButton(onClick = { searchDropdownVisible = false }) {
-                                        Text("Done")
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -483,9 +542,25 @@ fun GalleryScreen(
 }
 
 
+private sealed interface GalleryGridItem {
+    data class Media(val item: MediaItem) : GalleryGridItem
+    data class Header(val title: String) : GalleryGridItem
+}
+
+private fun galleryGroupKey(timestamp: Long, groupBy: String): String {
+    val pattern = when (groupBy) {
+        "Year" -> "yyyy"
+        "Month" -> "MMMM yyyy"
+        "Day" -> "dd MMMM yyyy"
+        else -> ""
+    }
+    if (pattern.isBlank()) return ""
+    return java.text.SimpleDateFormat(pattern, Locale.US).format(java.util.Date(timestamp))
+}
+
 @Composable
 private fun PagedMediaGrid(
-    items: androidx.paging.compose.LazyPagingItems<MediaItem>,
+    items: androidx.paging.compose.LazyPagingItems<GalleryGridItem>,
     gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     columns: Int,
     onItemClick: (MediaItem) -> Unit,
@@ -493,6 +568,7 @@ private fun PagedMediaGrid(
     selectedPaths: Set<String> = emptySet()
 ) {
     LazyVerticalGrid(
+        state = gridState,
         columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -501,17 +577,56 @@ private fun PagedMediaGrid(
     ) {
         items(
             count = items.itemCount,
-            key = items.itemKey { it.uri.toString() },
-            contentType = items.itemContentType { if (it.isVideo) "video" else "photo" }
+            key = { index ->
+                when (val model = items.peek(index)) {
+                    is GalleryGridItem.Header -> "header:" + model.title + ":" + index
+                    is GalleryGridItem.Media -> "media:" + model.item.uri
+                    null -> "placeholder:" + index
+                }
+            },
+            span = { index ->
+                if (items.peek(index) is GalleryGridItem.Header) {
+                    androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan)
+                } else {
+                    androidx.compose.foundation.lazy.grid.GridItemSpan(1)
+                }
+            },
+            contentType = { index ->
+                when (items.peek(index)) {
+                    is GalleryGridItem.Header -> "header"
+                    is GalleryGridItem.Media -> "media"
+                    null -> "placeholder"
+                }
+            }
         ) { index ->
-            val item = items[index]
-            if (item != null) {
-                MediaGridThumbnail(
-                    item = item,
-                    onClick = { onItemClick(item) },
-                    onLongClick = { onItemLongClick(item) },
-                    selected = item.path in selectedPaths
-                )
+            when (val model = items[index]) {
+                is GalleryGridItem.Header -> {
+                    Text(
+                        text = model.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 6.dp, vertical = 10.dp)
+                    )
+                }
+                is GalleryGridItem.Media -> {
+                    val item = model.item
+                    MediaGridThumbnail(
+                        item = item,
+                        onClick = { onItemClick(item) },
+                        onLongClick = { onItemLongClick(item) },
+                        selected = item.path in selectedPaths
+                    )
+                }
+                null -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                    )
+                }
             }
         }
 
@@ -530,10 +645,7 @@ private fun PagedMediaGrid(
     }
 
     if (items.itemCount == 0 && items.loadState.refresh is LoadState.Loading) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
     }
@@ -542,133 +654,6 @@ private fun PagedMediaGrid(
         EmptyGalleryMessage("Could not load media. Pull to refresh.")
     }
 }
-
-@Composable
-private fun SearchQuickFilterRow(
-    uiState: UiState,
-    viewModel: UnifiedViewModel
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        FilterChip(
-            selected = uiState.galleryFilter == "PHOTOS",
-            onClick = {
-                viewModel.setGalleryFilter("PHOTOS")
-                viewModel.setGallerySearchQuery(
-                    removeSearchOperators(uiState.gallerySearchQuery, "type")
-                )
-            },
-            label = { Text("Photos") }
-        )
-        FilterChip(
-            selected = uiState.galleryFilter == "VIDEOS",
-            onClick = {
-                viewModel.setGalleryFilter("VIDEOS")
-                viewModel.setGallerySearchQuery(
-                    removeSearchOperators(uiState.gallerySearchQuery, "type")
-                )
-            },
-            label = { Text("Videos") }
-        )
-        FilterChip(
-            selected = uiState.galleryFilter == "FAVORITES",
-            onClick = {
-                viewModel.setGalleryFilter("FAVORITES")
-                viewModel.setGallerySearchActive(true)
-            },
-            label = { Text("Favorites") }
-        )
-        FilterChip(
-            selected = hasSearchOperator(uiState.gallerySearchQuery, "date"),
-            onClick = {
-                viewModel.setGallerySearchQuery(
-                    replaceSearchOperators(
-                        uiState.gallerySearchQuery,
-                        setOf("date", "taken", "year", "month", "after", "before"),
-                        "date:" + todayToken()
-                    )
-                )
-            },
-            label = { Text("Today") }
-        )
-        FilterChip(
-            selected = hasSearchOperator(uiState.gallerySearchQuery, "month"),
-            onClick = {
-                viewModel.setGallerySearchQuery(
-                    replaceSearchOperators(
-                        uiState.gallerySearchQuery,
-                        setOf("date", "taken", "year", "month", "after", "before"),
-                        "month:" + monthToken()
-                    )
-                )
-            },
-            label = { Text("This month") }
-        )
-        FilterChip(
-            selected = hasSearchOperator(uiState.gallerySearchQuery, "year"),
-            onClick = {
-                viewModel.setGallerySearchQuery(
-                    replaceSearchOperators(
-                        uiState.gallerySearchQuery,
-                        setOf("date", "taken", "year", "month", "after", "before"),
-                        "year:" + yearToken()
-                    )
-                )
-            },
-            label = { Text("This year") }
-        )
-        FilterChip(
-            selected = hasSearchOperatorValue(uiState.gallerySearchQuery, "gps", "true"),
-            onClick = {
-                viewModel.setGallerySearchQuery(
-                    replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:true")
-                )
-            },
-            label = { Text("With GPS") }
-        )
-        FilterChip(
-            selected = hasSearchOperatorValue(uiState.gallerySearchQuery, "gps", "false"),
-            onClick = {
-                viewModel.setGallerySearchQuery(
-                    replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:false")
-                )
-            },
-            label = { Text("No GPS") }
-        )
-    }
-}
-
-private fun hasSearchOperator(query: String, key: String): Boolean =
-    Regex("""(?i)(^|\\s)$key:""").containsMatchIn(query)
-
-private fun hasSearchOperatorValue(query: String, key: String, value: String): Boolean =
-    Regex("""(?i)(^|\\s)$key:$value(?=\\s|$)""").containsMatchIn(query)
-
-private fun removeSearchOperators(query: String, vararg keys: String): String {
-    if (query.isBlank()) return ""
-    val pattern = keys.joinToString("|") { Regex.escape(it) }
-    return query
-        .replace(
-            Regex("""(?i)(^|\\s)(?:$pattern):(?:"[^"]*"|\\S+)"""),
-            " "
-        )
-        .replace(Regex("""\\s+"""), " ")
-        .trim()
-}
-
-private fun replaceSearchOperators(
-    query: String,
-    keys: Set<String>,
-    replacement: String
-): String =
-    (removeSearchOperators(query, *keys.toTypedArray()) + " " + replacement)
-        .trim()
-        .replace(Regex("""\\s+"""), " ")
 
 private fun todayToken(): String =
     java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
