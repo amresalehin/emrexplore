@@ -2,7 +2,6 @@ package com.example.ui.screens
 import kotlin.math.roundToInt
 import kotlin.math.abs
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.consume
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -29,6 +28,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -629,7 +629,6 @@ private fun GalleryScrollbar(
             .fillMaxHeight()
             .pointerInput(total, columns) {
                 detectVerticalDragGestures { change, dragAmount ->
-                    change.consume()
                     scope.launch {
                         val viewport = gridState.layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f)
                         val itemRange = (total - visible).coerceAtLeast(1)
