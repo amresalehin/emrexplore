@@ -14,7 +14,8 @@ enum class FullscreenMediaSource {
     PHOTOS,
     VIDEOS,
     FAVORITES,
-    ALBUM
+    ALBUM,
+    SEARCH
 }
 
 data class MediaViewerWindow(
@@ -44,6 +45,122 @@ class MediaRepository(context: Context) {
     ).flow
 
     /**
+     * Search-specific fullscreen window loader. It walks only the filtered search
+     * pages, finds the requested item, and keeps the resulting viewer window bounded.
+     */
+    suspend fun loadSearchViewerWindow(
+        item: com.example.data.model.MediaItem,
+        query: String,
+        filter: MediaFilter,
+        favoritesOnly: Boolean,
+        radius: Int = 2
+    ): MediaViewerWindow {
+        val source = MediaSearchPagingSource(
+            appContext,
+            query,
+            filter,
+            favoritesOnly
+        )
+
+        var providerOffset = 0
+        var resultStart = 0
+        var total = 0
+        var targetIndex = -1
+        var targetPageStart = 0
+        var targetPage: androidx.paging.PagingSource.LoadResult.Page<Int, com.example.data.model.MediaItem>? = null
+
+        while (true) {
+            when (
+                val loaded = source.load(
+                    androidx.paging.PagingSource.LoadParams.Refresh(
+                        providerOffset,
+                        MediaStorePagingSource.MAX_PAGE_SIZE,
+                        false
+                    )
+                )
+            ) {
+                is androidx.paging.PagingSource.LoadResult.Page -> {
+                    val index = loaded.data.indexOfFirst {
+                        it.uri == item.uri || it.path == item.path
+                    }
+                    if (index >= 0 && targetIndex < 0) {
+                        targetIndex = resultStart + index
+                        targetPageStart = resultStart
+                        targetPage = loaded
+                    }
+
+                    total += loaded.data.size
+                    val next = loaded.nextKey ?: break
+                    providerOffset = next
+                    resultStart = total
+                }
+
+                is androidx.paging.PagingSource.LoadResult.Error -> throw loaded.throwable
+                is androidx.paging.PagingSource.LoadResult.Invalid -> break
+            }
+        }
+
+        val page = targetPage ?: return MediaViewerWindow(
+            startIndex = 0,
+            items = listOf(item),
+            totalCount = total.coerceAtLeast(1)
+        )
+
+        val before = if (
+            targetIndex - radius < targetPageStart &&
+            page.prevKey != null
+        ) {
+            when (
+                val previous = source.load(
+                    androidx.paging.PagingSource.LoadParams.Refresh(
+                        page.prevKey!!,
+                        MediaStorePagingSource.MAX_PAGE_SIZE,
+                        false
+                    )
+                )
+            ) {
+                is androidx.paging.PagingSource.LoadResult.Page -> previous.data
+                else -> emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        val after = if (
+            targetIndex + radius >= targetPageStart + page.data.size &&
+            page.nextKey != null
+        ) {
+            when (
+                val next = source.load(
+                    androidx.paging.PagingSource.LoadParams.Refresh(
+                        page.nextKey!!,
+                        MediaStorePagingSource.MAX_PAGE_SIZE,
+                        false
+                    )
+                )
+            ) {
+                is androidx.paging.PagingSource.LoadResult.Page -> next.data
+                else -> emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
+        val combined = before + page.data + after
+        val combinedStart = targetPageStart - before.size
+        val start = (targetIndex - radius).coerceAtLeast(0)
+        val endExclusive = (targetIndex + radius + 1).coerceAtMost(total)
+        val from = (start - combinedStart).coerceAtLeast(0)
+        val to = (endExclusive - combinedStart).coerceAtMost(combined.size)
+
+        return MediaViewerWindow(
+            startIndex = start,
+            items = combined.subList(from, to),
+            totalCount = total
+        )
+    }
+
+    /**
      * Loads a small bounded window for fullscreen navigation without depending on
      * the UI Paging snapshot. The PagingSource is reused as the canonical query
      * implementation, but only the requested viewer window is materialized.
@@ -62,10 +179,11 @@ class MediaRepository(context: Context) {
             FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
             FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
             FullscreenMediaSource.ALBUM -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+            FullscreenMediaSource.SEARCH -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
             FullscreenMediaSource.FAVORITES -> ""
         }
         val args = when (source) {
-            FullscreenMediaSource.ALL, FullscreenMediaSource.ALBUM -> mutableListOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+            FullscreenMediaSource.ALL, FullscreenMediaSource.ALBUM, FullscreenMediaSource.SEARCH -> mutableListOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
             else -> mutableListOf(mediaType.toString())
         }
         var selection = "($typeSelection) AND (" + MediaStore.Files.FileColumns.DATE_ADDED + " > ? OR (" + MediaStore.Files.FileColumns.DATE_ADDED + " = ? AND " + MediaStore.Files.FileColumns._ID + " > ?))"
@@ -87,6 +205,7 @@ class MediaRepository(context: Context) {
             FullscreenMediaSource.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())
             FullscreenMediaSource.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?" to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
             FullscreenMediaSource.ALBUM -> (MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " + MediaStore.Files.FileColumns.BUCKET_ID + " = ?") to arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(), requireNotNull(albumId))
+            FullscreenMediaSource.SEARCH -> "1 = 0" to emptyArray()
             FullscreenMediaSource.FAVORITES -> "1=0" to emptyArray()
         }
         return resolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns._ID), selection, args, null)?.use { it.count } ?: 0
@@ -107,6 +226,7 @@ class MediaRepository(context: Context) {
             FullscreenMediaSource.FAVORITES -> FavoriteMediaPagingSource(appContext)
             FullscreenMediaSource.ALBUM -> requireNotNull(albumId) { "albumId is required for album fullscreen source" }
                 .let { MediaStoreAlbumPagingSource(appContext, it) }
+            FullscreenMediaSource.SEARCH -> error("Use loadSearchViewerWindow() for SEARCH source")
         }
         return when (val result = pagingSource.load(
             androidx.paging.PagingSource.LoadParams.Refresh(start, size, false)
