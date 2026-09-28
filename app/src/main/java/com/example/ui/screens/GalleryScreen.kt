@@ -976,6 +976,8 @@ private fun MediaGridThumbnail(
             .size(280, 280)
             .crossfade(false)
             .allowHardware(true)
+            .memoryCacheKey(item.uri.toString())
+            .diskCacheKey(item.uri.toString())
             .build()
     }
 
