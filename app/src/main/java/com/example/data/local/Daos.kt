@@ -192,3 +192,23 @@ interface IndexStatusDao {
     suspend fun updateStatus(status: IndexStatusEntity)
 }
 
+@Dao
+interface MediaMetadataDao {
+    @Query("SELECT * FROM media_metadata WHERE uri = :uri LIMIT 1")
+    suspend fun get(uri: String): MediaMetadataEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(metadata: MediaMetadataEntity)
+
+    @Query("DELETE FROM media_metadata WHERE uri = :uri")
+    suspend fun delete(uri: String)
+}
+
+@Dao
+interface PlaceSearchCacheDao {
+    @Query("SELECT * FROM place_search_cache WHERE query = :query LIMIT 1")
+    suspend fun get(query: String): PlaceSearchCacheEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(cache: PlaceSearchCacheEntity)
+}
