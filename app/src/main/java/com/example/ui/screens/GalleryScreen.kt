@@ -4,6 +4,7 @@ import kotlin.math.abs
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.Canvas
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -70,6 +72,8 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -92,6 +96,7 @@ import androidx.compose.ui.platform.LocalContext
 import coil.request.ImageRequest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -126,6 +131,10 @@ fun GalleryScreen(
     val galleryGridState = rememberLazyGridState()
     var chromeVisible by remember { mutableStateOf(true) }
     var searchDropdownVisible by remember { mutableStateOf(false) }
+    var filterMenuVisible by remember { mutableStateOf(false) }
+    var sortMenuVisible by remember { mutableStateOf(false) }
+    var groupMenuVisible by remember { mutableStateOf(false) }
+    var groupBy by remember { mutableStateOf("Month") }
 
     LaunchedEffect(galleryGridState) {
         var lastIndex = 0
@@ -202,51 +211,120 @@ fun GalleryScreen(
                         }
                     } else {
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Surface(
-                                shape = RoundedCornerShape(18.dp),
+                                shape = RoundedCornerShape(20.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant,
-                                modifier = Modifier.weight(1f).height(44.dp)
-                                    .clickable { searchDropdownVisible = !searchDropdownVisible }
+                                modifier = Modifier.weight(1f).height(48.dp)
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                                    modifier = Modifier.fillMaxSize().padding(start = 12.dp, end = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(Icons.Default.Search, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
-                                    Text(
-                                        text = if (uiState.gallerySearchQuery.isBlank()) {
-                                            if (uiState.gallerySubTab == GallerySubTab.ALBUMS) "Search albums" else "Search photos & videos"
-                                        } else uiState.gallerySearchQuery,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
+                                    BasicTextField(
+                                        value = uiState.gallerySearchQuery,
+                                        onValueChange = viewModel::setGallerySearchQuery,
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f).onFocusChanged {
+                                            if (it.isFocused) searchDropdownVisible = true
+                                        },
+                                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ),
+                                        decorationBox = { innerTextField ->
+                                            if (uiState.gallerySearchQuery.isBlank()) {
+                                                Text(
+                                                    if (uiState.gallerySubTab == GallerySubTab.ALBUMS) "Search albums" else "Search photos & videos",
+                                                    style = MaterialTheme.typography.bodyLarge,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
                                     )
+                                    if (uiState.gallerySearchQuery.isNotBlank()) {
+                                        IconButton(onClick = viewModel::clearGallerySearch) {
+                                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        viewModel.setGallerySubTab(
+                                            if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS
+                                            else GallerySubTab.TIMELINE
+                                        )
+                                        searchDropdownVisible = false
+                                    }) {
+                                        Icon(
+                                            if (uiState.gallerySubTab == GallerySubTab.TIMELINE) Icons.Default.PhotoLibrary else Icons.Default.Collections,
+                                            contentDescription = if (uiState.gallerySubTab == GallerySubTab.TIMELINE) "Albums" else "Photos and videos"
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
+                                        viewModel.setGalleryColumns(nextCols)
+                                    }) {
+                                        Icon(Icons.Default.GridView, contentDescription = "Change grid columns")
+                                    }
                                 }
                             }
-                            IconButton(onClick = {
-                                viewModel.setGallerySubTab(
-                                    if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS else GallerySubTab.TIMELINE
-                                )
-                                searchDropdownVisible = false
-                            }) {
-                                Icon(
-                                    if (uiState.gallerySubTab == GallerySubTab.TIMELINE) Icons.Default.PhotoLibrary else Icons.Default.Collections,
-                                    contentDescription = if (uiState.gallerySubTab == GallerySubTab.TIMELINE) "Albums" else "Photos and videos"
-                                )
+
+                            Box {
+                                IconButton(onClick = { filterMenuVisible = !filterMenuVisible }) {
+                                    Icon(Icons.Default.Tune, contentDescription = "Filter")
+                                }
+                                DropdownMenu(expanded = filterMenuVisible, onDismissRequest = { filterMenuVisible = false }) {
+                                    DropdownMenuItem(text = { Text("All media") }, onClick = {
+                                        viewModel.setGalleryFilter("ALL"); filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("Photos") }, onClick = {
+                                        viewModel.setGalleryFilter("PHOTOS"); filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("Videos") }, onClick = {
+                                        viewModel.setGalleryFilter("VIDEOS"); filterMenuVisible = false
+                                    })
+                                    DropdownMenuItem(text = { Text("Favorites") }, onClick = {
+                                        viewModel.setGalleryFilter("FAVORITES"); filterMenuVisible = false
+                                    })
+                                }
                             }
-                            IconButton(onClick = {
-                                val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
-                                viewModel.setGalleryColumns(nextCols)
-                            }) {
-                                Icon(Icons.Default.GridView, contentDescription = "Change grid columns")
+
+                            Box {
+                                IconButton(onClick = { sortMenuVisible = !sortMenuVisible }) {
+                                    Icon(Icons.Default.Sort, contentDescription = "Sort")
+                                }
+                                DropdownMenu(expanded = sortMenuVisible, onDismissRequest = { sortMenuVisible = false }) {
+                                    GallerySortOption.values().forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option.title) },
+                                            onClick = {
+                                                viewModel.setGallerySortOption(option)
+                                                sortMenuVisible = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
-                            IconButton(onClick = { searchDropdownVisible = !searchDropdownVisible }) {
-                                Icon(Icons.Default.Sort, contentDescription = "Search, filters and sort")
+
+                            Box {
+                                IconButton(onClick = { groupMenuVisible = !groupMenuVisible }) {
+                                    Icon(Icons.Default.ViewColumn, contentDescription = "Group by")
+                                }
+                                DropdownMenu(expanded = groupMenuVisible, onDismissRequest = { groupMenuVisible = false }) {
+                                    listOf("Year", "Month", "Day", "None").forEach { option ->
+                                        DropdownMenuItem(
+                                            text = { Text(option) },
+                                            onClick = {
+                                                groupBy = option
+                                                groupMenuVisible = false
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -256,32 +334,19 @@ fun GalleryScreen(
                         enter = fadeIn() + expandVertically(),
                         exit = fadeOut() + shrinkVertically()
                     ) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Column(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                TextField(
-                                    value = uiState.gallerySearchQuery,
-                                    onValueChange = viewModel::setGallerySearchQuery,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    placeholder = { Text("Search, or use year:, camera:, gps:, near:") },
-                                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                    trailingIcon = {
-                                        if (uiState.gallerySearchQuery.isNotBlank()) {
-                                            IconButton(onClick = viewModel::clearGallerySearch) {
-                                                Icon(Icons.Default.Close, contentDescription = "Clear search")
-                                            }
-                                        }
-                                    },
-                                    colors = TextFieldDefaults.colors(
-                                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                        disabledContainerColor = MaterialTheme.colorScheme.surface
-                                    )
+                                Text(
+                                    "Suggestions",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
                                 )
-                                Text("Suggestions", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                                 Row(
                                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -297,25 +362,18 @@ fun GalleryScreen(
                                         )
                                     }
                                 }
-                                Text("Filters", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Filters",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 SearchQuickFilterRow(uiState = uiState, viewModel = viewModel)
                                 Row(
-                                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
                                 ) {
-                                    Text("Sort", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                                    GallerySortOption.values().forEach { option ->
-                                        FilterChip(
-                                            selected = uiState.gallerySortOption == option,
-                                            onClick = { viewModel.setGallerySortOption(option) },
-                                            label = { Text(option.title) }
-                                        )
-                                    }
-                                }
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                    IconButton(onClick = { searchDropdownVisible = false }) {
-                                        Icon(Icons.Default.Close, contentDescription = "Close search controls")
+                                    TextButton(onClick = { searchDropdownVisible = false }) {
+                                        Text("Done")
                                     }
                                 }
                             }
