@@ -1,6 +1,7 @@
 package com.example.data.media
 
 import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.os.Build
 import android.os.Bundle
@@ -80,11 +81,53 @@ class MediaAlbumRepository(context: Context) {
                 } else null
 
                 if (bucketId.isNotBlank() && name.isNotBlank()) {
+                    val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " +
+                        MediaStore.Files.FileColumns.BUCKET_ID + " = ?"
+                    val selectionArgs = arrayOf(
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
+                        bucketId
+                    )
+                    val count = resolver.query(
+                        MediaStore.Files.getContentUri("external"),
+                        arrayOf(MediaStore.Files.FileColumns._ID),
+                        selection,
+                        selectionArgs,
+                        null
+                    )?.use { it.count } ?: 0
+
+                    val coverProjection = arrayOf(
+                        MediaStore.Files.FileColumns._ID,
+                        MediaStore.Files.FileColumns.MEDIA_TYPE
+                    )
+                    val deterministicCover = resolver.query(
+                        MediaStore.Files.getContentUri("external"),
+                        coverProjection,
+                        selection,
+                        selectionArgs,
+                        MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+                            MediaStore.Files.FileColumns._ID + " DESC LIMIT 1"
+                    )?.use { coverCursor ->
+                        if (coverCursor.moveToFirst()) {
+                            val coverId = coverCursor.getLong(
+                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+                            )
+                            val coverVideo = coverCursor.getInt(
+                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+                            ) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                            ContentUris.withAppendedId(
+                                if (coverVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                                coverId
+                            )
+                        } else null
+                    }
+
                     result += MediaAlbum(
                         id = bucketId,
                         name = name,
-                        coverUri = coverUri,
-                        itemCount = -1
+                        coverUri = deterministicCover ?: coverUri,
+                        itemCount = count
                     )
                 }
             }
