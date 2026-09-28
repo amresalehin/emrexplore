@@ -191,8 +191,9 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        bottomBar = if (gallerySearchPageVisible && uiState.currentTab == MainTab.GALLERY) null else {
-            Column(
+        bottomBar = {
+            if (!(gallerySearchPageVisible && uiState.currentTab == MainTab.GALLERY)) {
+                Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .windowInsetsPadding(WindowInsets.navigationBars)
@@ -247,6 +248,8 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                         modifier = Modifier.testTag("nav_item_gallery")
                     )
                 }
+            }
+        }
             }
         }
     ) { innerPadding ->
