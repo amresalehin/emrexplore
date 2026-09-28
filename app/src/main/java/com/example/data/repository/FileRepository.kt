@@ -974,235 +974,77 @@ class FileRepository(private val context: Context) {
     }
 
     // MediaStore & App Directory Gallery Items
-    suspend fun getMediaItems(filter: String = "ALL"): List<MediaItem> = withContext(Dispatchers.IO) {
-        val mediaList = mutableListOf<MediaItem>()
-        val addedPaths = HashSet<String>()
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+    private fun getMediaCategoryFiles(
+        mediaType: Int,
+        favSet: Set<String>,
+        limit: Int = 300
+    ): List<FileItem> {
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.DISPLAY_NAME,
+            MediaStore.Files.FileColumns.DATA,
+            MediaStore.Files.FileColumns.SIZE,
+            MediaStore.Files.FileColumns.DATE_ADDED,
+            MediaStore.Files.FileColumns.MIME_TYPE
+        )
+        val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
+        val args = arrayOf(mediaType.toString())
+        val sortOrder = MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+            MediaStore.Files.FileColumns._ID + " DESC"
+        val uri = MediaStore.Files.getContentUri("external")
 
-        // 1. Query MediaStore Images & Videos
-        try {
-            val contentResolver = context.contentResolver
-
-            // Images
-            val imageUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val imageProjection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATA,
-                MediaStore.Images.Media.SIZE,
-                MediaStore.Images.Media.DATE_ADDED,
-                MediaStore.Images.Media.MIME_TYPE,
-                MediaStore.Images.Media.WIDTH,
-                MediaStore.Images.Media.HEIGHT,
-                MediaStore.Images.Media.BUCKET_ID,
-                MediaStore.Images.Media.BUCKET_DISPLAY_NAME
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val queryArgs = android.os.Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
+                putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
+                putInt(ContentResolver.QUERY_ARG_OFFSET, 0)
+            }
+            context.contentResolver.query(uri, projection, queryArgs, null)
+        } else {
+            context.contentResolver.query(
+                uri, projection, selection, args, "$sortOrder LIMIT $limit"
             )
+        }
 
-            contentResolver.query(
-                imageUri,
-                imageProjection,
-                null,
-                null,
-                "${MediaStore.Images.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndex(MediaStore.Images.Media._ID)
-                val nameCol = cursor.getColumnIndex(MediaStore.Images.Media.DISPLAY_NAME)
-                val dataCol = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
-                val sizeCol = cursor.getColumnIndex(MediaStore.Images.Media.SIZE)
-                val dateCol = cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
-                val mimeCol = cursor.getColumnIndex(MediaStore.Images.Media.MIME_TYPE)
-                val widthCol = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
-                val heightCol = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
-                val bucketIdCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_ID)
-                val bucketNameCol = cursor.getColumnIndex(MediaStore.Images.Media.BUCKET_DISPLAY_NAME)
+        val result = mutableListOf<FileItem>()
+        cursor?.use {
+            val idCol = it.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val nameCol = it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+            val dataCol = it.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+            val sizeCol = it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+            val dateCol = it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED)
+            val mimeCol = it.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
 
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    val uri = ContentUris.withAppendedId(imageUri, id)
-                    val path = cursor.getString(dataCol) ?: ""
-                    val name = cursor.getString(nameCol) ?: "Image_$id"
-                    val size = cursor.getLong(sizeCol)
-                    val dateAdded = cursor.getLong(dateCol) * 1000
-                    val mime = cursor.getString(mimeCol) ?: "image/jpeg"
-                    val width = cursor.getInt(widthCol)
-                    val height = cursor.getInt(heightCol)
-                    val bucketId = cursor.getString(bucketIdCol) ?: "default"
-                    val bucketName = cursor.getString(bucketNameCol) ?: "Pictures"
-
-                    val isFav = favSet.contains(path)
-                    addedPaths.add(path)
-
-                    mediaList.add(
-                        MediaItem(
-                            id = id,
-                            uri = uri,
-                            name = name,
-                            path = path,
-                            size = size,
-                            dateAdded = dateAdded,
-                            mimeType = mime,
-                            width = width,
-                            height = height,
-                            bucketId = bucketId,
-                            bucketName = bucketName,
-                            isVideo = false,
-                            isFavorite = isFav
-                        )
+            while (it.moveToNext()) {
+                val rowId = it.getLong(idCol)
+                val path = if (dataCol >= 0) it.getString(dataCol) ?: "" else ""
+                val isVideo = mediaType == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                val mediaUri = if (isVideo) {
+                    ContentUris.withAppendedId(
+                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId
+                    )
+                } else {
+                    ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId
                     )
                 }
-            }
-
-            // Videos
-            val videoUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            val videoProjection = arrayOf(
-                MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.DISPLAY_NAME,
-                MediaStore.Video.Media.DATA,
-                MediaStore.Video.Media.SIZE,
-                MediaStore.Video.Media.DATE_ADDED,
-                MediaStore.Video.Media.MIME_TYPE,
-                MediaStore.Video.Media.DURATION,
-                MediaStore.Video.Media.WIDTH,
-                MediaStore.Video.Media.HEIGHT,
-                MediaStore.Video.Media.BUCKET_ID,
-                MediaStore.Video.Media.BUCKET_DISPLAY_NAME
-            )
-
-            contentResolver.query(
-                videoUri,
-                videoProjection,
-                null,
-                null,
-                "${MediaStore.Video.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
-                val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
-                val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
-                val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
-                val dateCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_ADDED)
-                val mimeCol = cursor.getColumnIndex(MediaStore.Video.Media.MIME_TYPE)
-                val durationCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
-                val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
-                val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
-                val bucketIdCol = cursor.getColumnIndex(MediaStore.Video.Media.BUCKET_ID)
-                val bucketNameCol = cursor.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
-
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    val uri = ContentUris.withAppendedId(videoUri, id)
-                    val path = cursor.getString(dataCol) ?: ""
-                    val name = cursor.getString(nameCol) ?: "Video_$id"
-                    val size = cursor.getLong(sizeCol)
-                    val dateAdded = cursor.getLong(dateCol) * 1000
-                    val mime = cursor.getString(mimeCol) ?: "video/mp4"
-                    val duration = cursor.getLong(durationCol)
-                    val width = cursor.getInt(widthCol)
-                    val height = cursor.getInt(heightCol)
-                    val bucketId = cursor.getString(bucketIdCol) ?: "default"
-                    val bucketName = cursor.getString(bucketNameCol) ?: "Videos"
-
-                    val isFav = favSet.contains(path)
-                    addedPaths.add(path)
-
-                    mediaList.add(
-                        MediaItem(
-                            id = id + 1000000,
-                            uri = uri,
-                            name = name,
-                            path = path,
-                            size = size,
-                            dateAdded = dateAdded,
-                            mimeType = mime,
-                            duration = duration,
-                            width = width,
-                            height = height,
-                            bucketId = bucketId,
-                            bucketName = bucketName,
-                            isVideo = true,
-                            isFavorite = isFav
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 2. Also scan app working directory (seeded camera, screenshots, etc.)
-        scanDirectoryForMedia(baseWorkingDir, mediaList, addedPaths, favSet)
-
-        // Filter
-        val filtered = when (filter) {
-            "PHOTOS" -> mediaList.filter { !it.isVideo }
-            "VIDEOS" -> mediaList.filter { it.isVideo }
-            "FAVORITES" -> mediaList.filter { it.isFavorite }
-            else -> mediaList
-        }
-
-        filtered.sortedByDescending { it.dateAdded }
-    }
-
-    private fun scanDirectoryForMedia(
-        dir: File,
-        outList: MutableList<MediaItem>,
-        addedPaths: MutableSet<String>,
-        favSet: Set<String>
-    ) {
-        if (!dir.exists() || !dir.isDirectory) return
-        val files = dir.listFiles() ?: return
-
-        for (file in files) {
-            if (file.isDirectory) {
-                if (!file.name.startsWith(".")) {
-                    scanDirectoryForMedia(file, outList, addedPaths, favSet)
-                }
-            } else {
-                val ext = file.extension.lowercase()
-                val isImg = ext in listOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
-                val isVid = ext in listOf("mp4", "mkv", "webm", "avi", "mov")
-                if (isImg || isVid) {
-                    if (addedPaths.add(file.absolutePath)) {
-                        val isFav = favSet.contains(file.absolutePath)
-                        outList.add(
-                            MediaItem(
-                                id = file.absolutePath.hashCode().toLong(),
-                                uri = Uri.fromFile(file),
-                                name = file.name,
-                                path = file.absolutePath,
-                                size = file.length(),
-                                dateAdded = file.lastModified(),
-                                mimeType = if (isVid) "video/$ext" else "image/$ext",
-                                bucketId = file.parentFile?.name ?: "Photos",
-                                bucketName = file.parentFile?.name ?: "Photos",
-                                isVideo = isVid,
-                                isFavorite = isFav
-                            )
-                        )
-                    }
-                }
+                result += FileItem(
+                    name = it.getString(nameCol) ?: "Media_$rowId",
+                    path = path,
+                    size = it.getLong(sizeCol),
+                    lastModified = it.getLong(dateCol) * 1000L,
+                    isDirectory = false,
+                    mimeType = it.getString(mimeCol)
+                        ?: if (isVideo) "video/*" else "image/*",
+                    extension = File(path).extension.lowercase(),
+                    isFavorite = favSet.contains(path),
+                    uri = mediaUri
+                )
             }
         }
-    }
-
-    suspend fun getAllMediaData(): Pair<List<MediaItem>, List<MediaAlbum>> = withContext(Dispatchers.IO) {
-        val allMedia = getMediaItems("ALL")
-        val groups = allMedia.groupBy { it.bucketName }
-
-        val albums = groups.map { (bucketName, items) ->
-            val first = items.firstOrNull()
-            MediaAlbum(
-                id = first?.bucketId ?: bucketName,
-                name = bucketName,
-                coverUri = first?.uri,
-                coverPath = first?.path,
-                itemCount = items.size
-            )
-        }.sortedByDescending { it.itemCount }
-        Pair(allMedia, albums)
-    }
-
-    suspend fun getMediaAlbums(): List<MediaAlbum> = withContext(Dispatchers.IO) {
-        getAllMediaData().second
+        return result
     }
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {
@@ -1211,41 +1053,20 @@ class FileRepository(private val context: Context) {
 
         when (category) {
             CategoryType.IMAGES -> {
-                // MediaStore + base directory
-                val media = getMediaItems("PHOTOS")
-                for (m in media) {
-                    result.add(
-                        FileItem(
-                            name = m.name,
-                            path = m.path,
-                            size = m.size,
-                            lastModified = m.dateAdded,
-                            isDirectory = false,
-                            mimeType = m.mimeType,
-                            extension = File(m.path).extension.lowercase(),
-                            isFavorite = m.isFavorite,
-                            uri = m.uri
-                        )
+                result.addAll(
+                    getMediaCategoryFiles(
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE,
+                        favSet
                     )
-                }
+                )
             }
             CategoryType.VIDEOS -> {
-                val media = getMediaItems("VIDEOS")
-                for (m in media) {
-                    result.add(
-                        FileItem(
-                            name = m.name,
-                            path = m.path,
-                            size = m.size,
-                            lastModified = m.dateAdded,
-                            isDirectory = false,
-                            mimeType = m.mimeType,
-                            extension = File(m.path).extension.lowercase(),
-                            isFavorite = m.isFavorite,
-                            uri = m.uri
-                        )
+                result.addAll(
+                    getMediaCategoryFiles(
+                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO,
+                        favSet
                     )
-                }
+                )
             }
             CategoryType.AUDIO -> {
                 try {
