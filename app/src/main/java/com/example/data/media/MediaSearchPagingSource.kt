@@ -477,7 +477,8 @@ private object MediaSearchParser {
 
                 "gps" -> when (value.lowercase(Locale.US)) {
                     "yes", "true", "1" -> hasGps = true
-                    "no", "false", "0" -> nameTerms += raw
+                    "no", "false", "0" -> hasGps = false
+                    else -> nameTerms += raw
                 }
 
                 "favorite", "favorites" -> when (value.lowercase(Locale.US)) {
