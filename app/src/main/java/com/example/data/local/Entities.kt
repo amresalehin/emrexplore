@@ -91,3 +91,40 @@ data class IndexStatusEntity(
     val statusMessage: String = "Ready"
 )
 
+@Entity(
+    tableName = "media_metadata",
+    indices = [
+        Index(value = ["path"]),
+        Index(value = ["make"]),
+        Index(value = ["model"]),
+        Index(value = ["hasGps"]),
+        Index(value = ["capturedAt"])
+    ]
+)
+data class MediaMetadataEntity(
+    @PrimaryKey val uri: String,
+    val path: String = "",
+    val size: Long = 0L,
+    val dateAdded: Long = 0L,
+    val make: String? = null,
+    val model: String? = null,
+    val lens: String? = null,
+    val iso: Int? = null,
+    val aperture: Double? = null,
+    val focalLength: Double? = null,
+    val latitude: Double? = null,
+    val longitude: Double? = null,
+    val hasGps: Boolean = false,
+    val capturedAt: Long? = null,
+    val searchableText: String = "",
+    val indexedAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "place_search_cache")
+data class PlaceSearchCacheEntity(
+    @PrimaryKey val query: String,
+    val latitude: Double,
+    val longitude: Double,
+    val label: String = "",
+    val cachedAt: Long = System.currentTimeMillis()
+)
