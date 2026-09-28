@@ -208,6 +208,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private var audioProgressJob: Job? = null
     private var homeSearchJob: Job? = null
     private var loadFilesJob: Job? = null
+    private var fileSearchJob: Job? = null
     private var fullscreenLoadJob: Job? = null
 
     init {
@@ -324,6 +325,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     fun navigateToDirectory(path: String) {
         if (path == _uiState.value.currentPath && _uiState.value.files.isNotEmpty()) return
 
+        fileSearchJob?.cancel()
         loadFilesJob?.cancel()
 
         _uiState.update {
@@ -446,6 +448,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun loadFiles(path: String = _uiState.value.currentPath) {
+        fileSearchJob?.cancel()
         loadFilesJob?.cancel()
         loadFilesJob = viewModelScope.launch {
             if (_uiState.value.files.isEmpty()) {
@@ -551,7 +554,48 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setSearchQuery(query: String) {
-        _uiState.update { it.copy(searchQuery = query) }
+        val normalizedQuery = query.trim()
+        fileSearchJob?.cancel()
+
+        _uiState.update {
+            it.copy(
+                searchQuery = query,
+                isLoadingFiles = normalizedQuery.isNotEmpty(),
+                isLoadingNextPage = false,
+                hasMorePages = false
+            )
+        }
+
+        if (normalizedQuery.isEmpty()) {
+            loadFiles()
+            return
+        }
+
+        val searchPath = _uiState.value.currentPath
+        fileSearchJob = viewModelScope.launch {
+            delay(100)
+            val results = repository.searchFilesInDirectory(
+                dirPath = searchPath,
+                query = normalizedQuery,
+                showHidden = _uiState.value.showHidden,
+                limit = 150
+            )
+
+            _uiState.update { current ->
+                if (current.currentPath == searchPath && current.searchQuery.trim() == normalizedQuery) {
+                    current.copy(
+                        files = sortFiles(results, current.sortOption),
+                        currentPage = 0,
+                        totalFilesInFolder = results.size,
+                        hasMorePages = false,
+                        isLoadingFiles = false,
+                        isLoadingNextPage = false
+                    )
+                } else {
+                    current
+                }
+            }
+        }
     }
 
     // --- Home Tab Search Actions ---
