@@ -199,7 +199,7 @@ fun GalleryScreen(
     val albumPagedMedia = if (selectedAlbumId != null) {
         val albumFlow: Flow<PagingData<GalleryGridItem>> = remember(selectedAlbumId) {
             MediaRepository(context).albumPager(selectedAlbumId).map { pagingData: PagingData<MediaItem> ->
-                pagingData.map<GalleryGridItem> { media -> GalleryGridItem.Media(media) }
+                pagingData.map { media -> GalleryGridItem.Media(media) as GalleryGridItem }
             }
         }
         albumFlow.collectAsLazyPagingItems()
