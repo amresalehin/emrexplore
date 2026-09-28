@@ -248,8 +248,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                         modifier = Modifier.testTag("nav_item_gallery")
                     )
                 }
-            }
-        }
+                }
             }
         }
     ) { innerPadding ->
