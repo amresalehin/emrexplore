@@ -4,17 +4,19 @@ import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.database.Cursor
-import android.media.ExifInterface
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
+import com.example.data.local.AppDatabase
+import com.example.data.local.MediaMetadataEntity
 import com.example.data.model.MediaItem
 import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.cos
@@ -22,59 +24,50 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * Provider-backed, paged Gallery search.
+ * Provider-backed paged Gallery search.
  *
- * Cheap predicates are pushed into MediaStore. EXIF/GPS predicates are evaluated
- * only for the already-bounded MediaStore page, preventing a full-library scan.
- *
- * Examples:
- *   beach sunset
- *   "golden hour"
- *   type:photo
- *   type:video
- *   album:Camera
- *   folder:"WhatsApp Images"
- *   name:invoice
- *   date:2025-01-12
- *   after:2025-01-01
- *   before:2026-01-01
- *   year:2025
- *   month:2025-07
- *   camera:Canon
- *   model:"EOS R6"
- *   lens:"24-70"
- *   iso:800
- *   aperture:2.8
- *   focal:50
- *   description:sunset
- *   tag:travel
- *   gps:true
- *   gps:false
- *   near:22.57,88.36,10
+ * Filename/date/folder/type predicates are pushed to MediaStore. EXIF/GPS predicates
+ * use the persistent Room metadata cache and only extract a cache-miss image once.
  */
 class MediaSearchPagingSource(
     context: Context,
-    private val query: String,
-    private val baseFilter: MediaFilter
+    private val rawQuery: String,
+    private val baseFilter: MediaFilter,
+    private val favoritesOnly: Boolean = false
 ) : PagingSource<Int, MediaItem>() {
 
-    private val resolver: ContentResolver = context.applicationContext.contentResolver
-    private val parsed = MediaSearchParser.parse(query, baseFilter)
+    private val appContext = context.applicationContext
+    private val resolver: ContentResolver = appContext.contentResolver
+    private val favoriteDao = AppDatabase.getDatabase(appContext).favoriteDao()
+    private val metadataRepository = MediaMetadataRepository(appContext)
+    private val parsed = MediaSearchParser.parse(rawQuery, baseFilter)
+    private var resolvedParsed: ParsedMediaSearch? = null
 
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
         val offset = params.key ?: 0
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
+        val active = resolveParsed()
+
+        if (active.locationText != null && active.near == null) {
+            return LoadResult.Page(
+                emptyList(),
+                if (offset == 0) null else (offset - limit).coerceAtLeast(0),
+                null
+            )
+        }
 
         return try {
-            val rows = query(offset, limit)
-            val filteredRows = if (parsed.requiresExif) rows.filter(::matchesExif) else rows
+            val page = query(offset, limit, active)
+            val data = if (active.requiresMetadata) {
+                page.rows.filter { matchesMetadata(it, active) }
+            } else {
+                page.rows
+            }
 
             LoadResult.Page(
-                data = filteredRows,
+                data = data,
                 prevKey = if (offset == 0) null else (offset - limit).coerceAtLeast(0),
-                // Advance by the number of provider rows consumed, not filtered rows.
-                // This lets EXIF searches continue past a page containing no matches.
-                nextKey = if (rows.size < limit) null else offset + rows.size
+                nextKey = if (page.exhausted) null else offset + page.consumed
             )
         } catch (e: CancellationException) {
             throw e
@@ -83,7 +76,30 @@ class MediaSearchPagingSource(
         }
     }
 
-    private fun query(offset: Int, limit: Int): List<MediaItem> {
+    private suspend fun resolveParsed(): ParsedMediaSearch {
+        resolvedParsed?.let { return it }
+
+        val active = parsed.locationText?.let { location ->
+            metadataRepository.resolvePlace(location)?.let { place ->
+                parsed.copy(
+                    near = Near(
+                        place.latitude,
+                        place.longitude,
+                        parsed.locationRadiusKm
+                    )
+                )
+            }
+        } ?: parsed
+
+        resolvedParsed = active
+        return active
+    }
+
+    private suspend fun query(
+        offset: Int,
+        limit: Int,
+        p: ParsedMediaSearch
+    ): QueryPage {
         val projection = arrayOf(
             MediaStore.Files.FileColumns._ID,
             MediaStore.Files.FileColumns.DISPLAY_NAME,
@@ -99,18 +115,61 @@ class MediaSearchPagingSource(
             MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
         )
 
-        val uri = MediaStore.Files.getContentUri("external")
-        val sortOrder = MediaStore.Images.ImageColumns.DATE_TAKEN + " DESC, " +
-            MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-            MediaStore.Files.FileColumns._ID + " DESC"
+        val baseSelection = buildProviderSelection(p)
+        val baseArgs = buildProviderArgs(p)
 
+        if (favoritesOnly) {
+            val paths = favoriteDao.getFavoritePathsPage(limit, offset)
+            if (paths.isEmpty()) return QueryPage(emptyList(), 0, true)
+
+            val placeholders = paths.joinToString(",") { "?" }
+            val selection = "(" + baseSelection + ") AND " +
+                MediaStore.Files.FileColumns.DATA + " IN ($placeholders)"
+            val args = paths + baseArgs
+
+            val rows = queryProvider(
+                projection,
+                selection,
+                args.toTypedArray(),
+                0,
+                limit,
+                MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+                    MediaStore.Files.FileColumns._ID + " DESC"
+            )
+
+            return QueryPage(
+                rows = rows,
+                consumed = paths.size,
+                exhausted = paths.size < limit
+            )
+        }
+
+        val rows = queryProvider(
+            projection,
+            baseSelection,
+            baseArgs.toTypedArray(),
+            offset,
+            limit,
+            MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+                MediaStore.Files.FileColumns._ID + " DESC"
+        )
+
+        return QueryPage(rows, rows.size, rows.size < limit)
+    }
+
+    private fun queryProvider(
+        projection: Array<String>,
+        selection: String,
+        selectionArgs: Array<String>,
+        offset: Int,
+        limit: Int,
+        sortOrder: String
+    ): List<MediaItem> {
+        val uri = MediaStore.Files.getContentUri("external")
         val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val args = Bundle().apply {
-                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, parsed.selection)
-                putStringArray(
-                    ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
-                    parsed.args.toTypedArray()
-                )
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, selectionArgs)
                 putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
                 putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
                 putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
@@ -120,20 +179,63 @@ class MediaSearchPagingSource(
             resolver.query(
                 uri,
                 projection,
-                parsed.selection,
-                parsed.args.toTypedArray(),
+                selection,
+                selectionArgs,
                 "$sortOrder LIMIT $limit OFFSET $offset"
             )
         }
-
         return cursor?.use(::readCursor) ?: emptyList()
+    }
+
+    private fun buildProviderSelection(p: ParsedMediaSearch): String {
+        val clauses = mutableListOf<String>()
+        clauses += when (p.type) {
+            MediaFilter.PHOTOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
+            MediaFilter.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
+            MediaFilter.ALL, null -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+        }
+
+        p.nameTerms.forEach {
+            clauses += "(" +
+                "LOWER(" + MediaStore.Files.FileColumns.DISPLAY_NAME + ") LIKE ? OR " +
+                "LOWER(" + MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME + ") LIKE ? OR " +
+                "LOWER(" + MediaStore.Files.FileColumns.DATA + ") LIKE ?" +
+                ")"
+        }
+        p.album?.let {
+            clauses += "LOWER(" + MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME + ") LIKE ?"
+        }
+        p.after?.let { clauses += MediaStore.Images.ImageColumns.DATE_TAKEN + " >= ?" }
+        p.before?.let { clauses += MediaStore.Images.ImageColumns.DATE_TAKEN + " < ?" }
+        return clauses.joinToString(" AND ")
+    }
+
+    private fun buildProviderArgs(p: ParsedMediaSearch): List<String> {
+        val args = mutableListOf<String>()
+        when (p.type) {
+            MediaFilter.PHOTOS -> args += MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString()
+            MediaFilter.VIDEOS -> args += MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+            MediaFilter.ALL, null -> {
+                args += MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString()
+                args += MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+            }
+        }
+        p.nameTerms.forEach {
+            val pattern = "%" + it.lowercase(Locale.US) + "%"
+            args += pattern
+            args += pattern
+            args += pattern
+        }
+        p.album?.let { args += "%" + it.lowercase(Locale.US) + "%" }
+        p.after?.let { args += it.toString() }
+        p.before?.let { args += it.toString() }
+        return args
     }
 
     private fun readCursor(cursor: Cursor): List<MediaItem> {
         val result = ArrayList<MediaItem>(
             cursor.count.coerceAtMost(MediaStorePagingSource.MAX_PAGE_SIZE)
         )
-
         val id = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
         val name = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
         val data = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
@@ -151,32 +253,21 @@ class MediaSearchPagingSource(
             val rowId = cursor.getLong(id)
             val isVideo =
                 cursor.getInt(mediaType) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-            val contentUri = if (isVideo) {
-                ContentUris.withAppendedId(
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    rowId
-                )
+            val uri = if (isVideo) {
+                ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId)
             } else {
-                ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    rowId
-                )
+                ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
             }
 
             result += MediaItem(
                 id = if (isVideo) rowId + VIDEO_ID_OFFSET else rowId,
-                uri = contentUri,
+                uri = uri,
                 name = cursor.getString(name) ?: "Media_$rowId",
                 path = if (data >= 0) cursor.getString(data) ?: "" else "",
                 size = cursor.getLong(size),
                 dateAdded = cursor.getLong(dateAdded) * 1000L,
-                mimeType = cursor.getString(mime)
-                    ?: if (isVideo) "video/*" else "image/*",
-                duration = if (duration >= 0 && !cursor.isNull(duration)) {
-                    cursor.getLong(duration)
-                } else {
-                    0L
-                },
+                mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*",
+                duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L,
                 width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0,
                 height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0,
                 bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "",
@@ -184,115 +275,54 @@ class MediaSearchPagingSource(
                 isVideo = isVideo
             )
         }
-
         return result
     }
 
-    private fun matchesExif(item: MediaItem): Boolean {
-        // Current EXIF search path is image-only. MediaStore will still honor an
-        // explicit type:video query, but no video can satisfy EXIF/GPS predicates.
+    private suspend fun matchesMetadata(
+        item: MediaItem,
+        p: ParsedMediaSearch
+    ): Boolean {
         if (item.isVideo) return false
 
-        return try {
-            val exifUri = if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
-                (parsed.hasGps != null || parsed.near != null)
-            ) {
-                MediaStore.setRequireOriginal(item.uri)
-            } else {
-                item.uri
+        val metadata: MediaMetadataEntity = metadataRepository.getOrRead(
+            item,
+            requireOriginalLocation = p.hasGps != null || p.near != null
+        )
+
+        if (p.exifTerms.any { term ->
+                term.isNotBlank() &&
+                    !metadata.searchableText.contains(term.lowercase(Locale.US))
             }
+        ) return false
 
-            resolver.openInputStream(exifUri)?.use { stream ->
-                val exif = ExifInterface(stream)
+        p.make?.let { if (!metadata.make.orEmpty().contains(it, true)) return false }
+        p.model?.let { if (!metadata.model.orEmpty().contains(it, true)) return false }
+        p.lens?.let { if (!metadata.lens.orEmpty().contains(it, true)) return false }
+        p.iso?.let { if (metadata.iso != it) return false }
 
-                val searchable = listOf(
-                    ExifInterface.TAG_MAKE,
-                    ExifInterface.TAG_MODEL,
-                    "LensModel",
-                    "LensMake",
-                    ExifInterface.TAG_ARTIST,
-                    ExifInterface.TAG_COPYRIGHT,
-                    ExifInterface.TAG_IMAGE_DESCRIPTION,
-                    ExifInterface.TAG_USER_COMMENT,
-                    ExifInterface.TAG_SOFTWARE,
-                    ExifInterface.TAG_DATETIME_ORIGINAL,
-                    ExifInterface.TAG_DATETIME,
-                    ExifInterface.TAG_DATETIME_DIGITIZED
-                ).joinToString(" ") { exif.getAttribute(it).orEmpty() }.lowercase()
-
-                if (parsed.exifTerms.any { term ->
-                        term.isBlank() || !searchable.contains(term.lowercase())
-                    }
-                ) {
-                    return false
-                }
-
-                parsed.make?.let { value ->
-                    val make = exif.getAttribute(ExifInterface.TAG_MAKE).orEmpty()
-                    if (!make.contains(value, ignoreCase = true)) return false
-                }
-
-                parsed.model?.let { value ->
-                    val model = exif.getAttribute(ExifInterface.TAG_MODEL).orEmpty()
-                    if (!model.contains(value, ignoreCase = true)) return false
-                }
-
-                parsed.lens?.let { value ->
-                    val lens = (
-                        exif.getAttribute("LensModel").orEmpty() + " " +
-                            exif.getAttribute("LensMake").orEmpty()
-                        )
-                    if (!lens.contains(value, ignoreCase = true)) return false
-                }
-
-                parsed.iso?.let { requested ->
-                    val actual =
-                        exif.getAttributeInt(ExifInterface.TAG_ISO_SPEED_RATINGS, -1)
-                    if (actual != requested) return false
-                }
-
-                parsed.focalLength?.let { requested ->
-                    val actual =
-                        exif.getAttributeDouble(ExifInterface.TAG_FOCAL_LENGTH, Double.NaN)
-                    if (!actual.isFinite() || abs(actual - requested) > 0.2) return false
-                }
-
-                parsed.aperture?.let { requested ->
-                    val actual =
-                        exif.getAttributeDouble(ExifInterface.TAG_F_NUMBER, Double.NaN)
-                    if (!actual.isFinite() || abs(actual - requested) > 0.2) return false
-                }
-
-                val gpsOutput = FloatArray(2)
-                val hasGps = exif.getLatLong(gpsOutput)
-
-                when (parsed.hasGps) {
-                    true -> if (!hasGps) return false
-                    false -> if (hasGps) return false
-                    null -> Unit
-                }
-
-                parsed.near?.let { near ->
-                    if (!hasGps) return false
-                    if (distanceKm(
-                            gpsOutput[0].toDouble(),
-                            gpsOutput[1].toDouble(),
-                            near.lat,
-                            near.lon
-                        ) > near.radiusKm
-                    ) {
-                        return false
-                    }
-                }
-
-                true
-            } ?: false
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Exception) {
-            false
+        p.focalLength?.let {
+            val actual = metadata.focalLength ?: return false
+            if (abs(actual - it) > 0.2) return false
         }
+
+        p.aperture?.let {
+            val actual = metadata.aperture ?: return false
+            if (abs(actual - it) > 0.2) return false
+        }
+
+        when (p.hasGps) {
+            true -> if (!metadata.hasGps) return false
+            false -> if (metadata.hasGps) return false
+            null -> Unit
+        }
+
+        p.near?.let {
+            val lat = metadata.latitude ?: return false
+            val lon = metadata.longitude ?: return false
+            if (distanceKm(lat, lon, it.lat, it.lon) > it.radiusKm) return false
+        }
+
+        return true
     }
 
     private fun distanceKm(
@@ -326,9 +356,18 @@ class MediaSearchPagingSource(
     }
 }
 
+private data class QueryPage(
+    val rows: List<MediaItem>,
+    val consumed: Int,
+    val exhausted: Boolean
+)
+
 private data class ParsedMediaSearch(
-    val selection: String,
-    val args: List<String>,
+    val type: MediaFilter? = MediaFilter.ALL,
+    val nameTerms: List<String> = emptyList(),
+    val album: String? = null,
+    val after: Long? = null,
+    val before: Long? = null,
     val make: String? = null,
     val model: String? = null,
     val lens: String? = null,
@@ -337,9 +376,11 @@ private data class ParsedMediaSearch(
     val aperture: Double? = null,
     val hasGps: Boolean? = null,
     val near: Near? = null,
-    val exifTerms: List<String> = emptyList()
+    val exifTerms: List<String> = emptyList(),
+    val locationText: String? = null,
+    val locationRadiusKm: Double = 25.0
 ) {
-    val requiresExif: Boolean
+    val requiresMetadata: Boolean
         get() = make != null ||
             model != null ||
             lens != null ||
@@ -358,15 +399,12 @@ private data class Near(
 )
 
 private object MediaSearchParser {
-    private const val ESCAPE = "\"
-
     fun parse(rawQuery: String, baseFilter: MediaFilter): ParsedMediaSearch {
         val terms = tokenize(rawQuery)
         val nameTerms = mutableListOf<String>()
         val exifTerms = mutableListOf<String>()
 
-        var type: MediaFilter? =
-            if (baseFilter == MediaFilter.ALL) null else baseFilter
+        var type: MediaFilter? = if (baseFilter == MediaFilter.ALL) null else baseFilter
         var album: String? = null
         var after: Long? = null
         var before: Long? = null
@@ -378,160 +416,100 @@ private object MediaSearchParser {
         var aperture: Double? = null
         var hasGps: Boolean? = null
         var near: Near? = null
+        var locationText: String? = null
 
-        terms.forEach { raw ->
+        for (raw in terms) {
             val separator = raw.indexOf(':')
             if (separator <= 0) {
                 nameTerms += raw
-                return@forEach
+                continue
             }
 
-            val key = raw.substring(0, separator).lowercase()
+            val key = raw.substring(0, separator).lowercase(Locale.US)
             val value = raw.substring(separator + 1).trim()
 
             when (key) {
-                "type" -> when (value.lowercase()) {
+                "type" -> when (value.lowercase(Locale.US)) {
                     "photo", "photos", "image", "images" -> type = MediaFilter.PHOTOS
                     "video", "videos" -> type = MediaFilter.VIDEOS
                     "all" -> type = null
                     else -> nameTerms += raw
                 }
 
-                "album", "folder", "path" -> {
+                "album", "folder", "path" ->
                     if (value.isNotBlank()) album = value else nameTerms += raw
-                }
 
-                "name" -> {
+                "name" ->
                     if (value.isNotBlank()) nameTerms += value else nameTerms += raw
-                }
 
-                "make", "camera" -> {
+                "make", "camera" ->
                     if (value.isNotBlank()) make = value else nameTerms += raw
-                }
 
-                "model" -> {
+                "model" ->
                     if (value.isNotBlank()) model = value else nameTerms += raw
-                }
 
-                "lens" -> {
+                "lens" ->
                     if (value.isNotBlank()) lens = value else nameTerms += raw
-                }
 
-                "iso" -> {
+                "iso" ->
                     value.toIntOrNull()?.let { iso = it } ?: exifTerms.add(value)
-                }
 
-                "focal", "focallength" -> {
+                "focal", "focallength" ->
                     value.toDoubleOrNull()?.let { focalLength = it } ?: exifTerms.add(value)
-                }
 
-                "aperture", "fnumber", "f" -> {
+                "aperture", "fnumber", "f" ->
                     value.toDoubleOrNull()?.let { aperture = it } ?: exifTerms.add(value)
-                }
 
-                "description", "caption", "tag", "keyword", "exif" -> {
+                "description", "caption", "tag", "keyword", "exif" ->
                     if (value.isNotBlank()) exifTerms += value else nameTerms += raw
-                }
 
-                "gps" -> when (value.lowercase()) {
+                "gps" -> when (value.lowercase(Locale.US)) {
                     "yes", "true", "1" -> hasGps = true
                     "no", "false", "0" -> hasGps = false
                     else -> nameTerms += raw
                 }
 
-                "near", "location" -> {
-                    parseNear(value)?.let { near = it } ?: run {
-                        if (value.isNotBlank()) album = value else nameTerms += raw
-                    }
-                }
+                "near" ->
+                    parseNear(value)?.let { near = it } ?: nameTerms.add(raw)
 
-                "after" -> {
+                "location" ->
+                    parseNear(value)?.let { near = it }
+                        ?: if (value.isNotBlank()) locationText = value else nameTerms.add(raw)
+
+                "after" ->
                     parseDate(value)?.let { after = it } ?: nameTerms.add(raw)
-                }
 
-                "before" -> {
+                "before" ->
                     parseDate(value)?.let { before = it } ?: nameTerms.add(raw)
-                }
 
-                "date", "taken" -> {
-                    parseDate(value)?.let { timestamp ->
-                        after = timestamp
-                        before = timestamp + DAY_MILLIS
+                "date", "taken" ->
+                    parseDate(value)?.let {
+                        after = it
+                        before = it + DAY_MILLIS
                     } ?: nameTerms.add(raw)
-                }
 
-                "year" -> {
+                "year" ->
                     parseYear(value)?.let {
                         after = it.first
                         before = it.second
                     } ?: nameTerms.add(raw)
-                }
 
-                "month" -> {
+                "month" ->
                     parseMonth(value)?.let {
                         after = it.first
                         before = it.second
                     } ?: nameTerms.add(raw)
-                }
 
                 else -> nameTerms += raw
             }
         }
 
-        val clauses = mutableListOf<String>()
-        val args = mutableListOf<String>()
-
-        when (type) {
-            MediaFilter.PHOTOS -> {
-                clauses += MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
-                args += MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString()
-            }
-
-            MediaFilter.VIDEOS -> {
-                clauses += MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
-                args += MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
-            }
-
-            null, MediaFilter.ALL -> {
-                clauses += MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
-                args += MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString()
-                args += MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
-            }
-        }
-
-        nameTerms.forEach { term ->
-            val pattern = "%" + escapeLike(term).lowercase() + "%"
-            clauses += (
-                "(LOWER(" + MediaStore.Files.FileColumns.DISPLAY_NAME + ") LIKE ? ESCAPE '\\' OR " +
-                    "LOWER(" + MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME + ") LIKE ? ESCAPE '\\' OR " +
-                    "LOWER(" + MediaStore.Files.FileColumns.DATA + ") LIKE ? ESCAPE '\\')"
-                )
-            args += pattern
-            args += pattern
-            args += pattern
-        }
-
-        album?.let {
-            clauses += (
-                "LOWER(" + MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME +
-                    ") LIKE ? ESCAPE '\\'"
-                )
-            args += "%" + escapeLike(it).lowercase() + "%"
-        }
-
-        after?.let {
-            clauses += MediaStore.Images.ImageColumns.DATE_TAKEN + " >= ?"
-            args += it.toString()
-        }
-
-        before?.let {
-            clauses += MediaStore.Images.ImageColumns.DATE_TAKEN + " < ?"
-            args += it.toString()
-        }
-
         return ParsedMediaSearch(
-            selection = clauses.joinToString(" AND "),
-            args = args,
+            type = type,
+            nameTerms = nameTerms,
+            album = album,
+            after = after,
+            before = before,
             make = make,
             model = model,
             lens = lens,
@@ -540,7 +518,8 @@ private object MediaSearchParser {
             aperture = aperture,
             hasGps = hasGps,
             near = near,
-            exifTerms = exifTerms
+            exifTerms = exifTerms,
+            locationText = locationText
         )
     }
 
@@ -548,35 +527,20 @@ private object MediaSearchParser {
         val result = mutableListOf<String>()
         val current = StringBuilder()
         var quoted = false
-        var escaped = false
 
         rawQuery.forEach { char ->
             when {
-                escaped -> {
-                    current.append(char)
-                    escaped = false
-                }
-
-                char == '\\' && quoted -> {
-                    escaped = true
-                }
-
-                char == '"' -> {
-                    quoted = !quoted
-                }
-
+                char == '"' -> quoted = !quoted
                 char.isWhitespace() && !quoted -> {
                     if (current.isNotEmpty()) {
                         result += current.toString()
                         current.clear()
                     }
                 }
-
                 else -> current.append(char)
             }
         }
 
-        if (escaped) current.append('\\')
         if (current.isNotEmpty()) result += current.toString()
         return result
     }
@@ -584,21 +548,21 @@ private object MediaSearchParser {
     private fun parseDate(value: String): Long? = runCatching {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
             isLenient = false
-            timeZone = java.util.TimeZone.getDefault()
+            timeZone = TimeZone.getDefault()
         }.parse(value)?.time
     }.getOrNull()
 
     private fun parseYear(value: String): Pair<Long, Long>? = runCatching {
         val year = value.toInt()
         if (year !in 1..9999) return null
-        val zone = java.util.TimeZone.getDefault()
-        val start = Calendar.getInstance(zone, Locale.US).apply {
+        val zone = TimeZone.getDefault()
+        val start = Calendar.getInstance(zone).apply {
             clear()
             set(Calendar.YEAR, year)
             set(Calendar.MONTH, Calendar.JANUARY)
             set(Calendar.DAY_OF_MONTH, 1)
         }.timeInMillis
-        val end = Calendar.getInstance(zone, Locale.US).apply {
+        val end = Calendar.getInstance(zone).apply {
             clear()
             set(Calendar.YEAR, year + 1)
             set(Calendar.MONTH, Calendar.JANUARY)
@@ -613,14 +577,15 @@ private object MediaSearchParser {
         val year = parts[0].toInt()
         val month = parts[1].toInt()
         if (year !in 1..9999 || month !in 1..12) return null
-        val zone = java.util.TimeZone.getDefault()
-        val start = Calendar.getInstance(zone, Locale.US).apply {
+
+        val zone = TimeZone.getDefault()
+        val start = Calendar.getInstance(zone).apply {
             clear()
             set(Calendar.YEAR, year)
             set(Calendar.MONTH, month - 1)
             set(Calendar.DAY_OF_MONTH, 1)
         }.timeInMillis
-        val end = Calendar.getInstance(zone, Locale.US).apply {
+        val end = Calendar.getInstance(zone).apply {
             clear()
             set(Calendar.YEAR, year)
             set(Calendar.MONTH, month)
@@ -630,29 +595,23 @@ private object MediaSearchParser {
     }.getOrNull()
 
     private fun parseNear(value: String): Near? = runCatching {
-        val parts = value.split(',')
+        val parts = value.split(",")
         if (parts.size !in 2..3) return null
 
         val lat = parts[0].trim().toDouble()
         val lon = parts[1].trim().toDouble()
-        val radiusKm = parts.getOrNull(2)
+        val radius = parts.getOrNull(2)
             ?.trim()
             ?.removeSuffix("km")
             ?.toDoubleOrNull()
             ?: 5.0
 
-        if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || radiusKm < 0.0) {
+        if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || radius < 0.0) {
             return null
         }
 
-        Near(lat, lon, radiusKm)
+        Near(lat, lon, radius)
     }.getOrNull()
-
-    private fun escapeLike(value: String): String =
-        value
-            .replace(ESCAPE, ESCAPE + ESCAPE)
-            .replace("%", ESCAPE + "%")
-            .replace("_", ESCAPE + "_")
 
     private const val DAY_MILLIS = 86_400_000L
 }
