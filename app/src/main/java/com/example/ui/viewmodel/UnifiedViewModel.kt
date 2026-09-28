@@ -174,7 +174,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             if (filter == null && query.isBlank()) {
                 mediaRepository.favoritesPager()
             } else if (query.isBlank()) {
-                mediaRepository.pager(filter)
+                mediaRepository.pager(filter ?: MediaFilter.ALL)
             } else {
                 mediaRepository.searchPager(
                     query,
