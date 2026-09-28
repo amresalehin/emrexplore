@@ -296,7 +296,7 @@ fun GalleryScreen(
                                 ) {
                                     Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text(galleryFilterLabel(uiState.galleryFilter), maxLines = 1)
+                                    Text(galleryFilterLabel(uiState.galleryFilter, uiState.gallerySearchQuery), maxLines = 1)
                                 }
                                 DropdownMenu(
                                     expanded = filterMenuVisible,
@@ -354,7 +354,7 @@ fun GalleryScreen(
                                 }
                             }
                         }
-                        // In-place search dropdown. It contains no second search input.
+                        // In-place search dropdown with the full search field, recent searches, suggestions, and filters.
                         AnimatedVisibility(
                             visible = searchDropdownVisible,
                             enter = fadeIn() + expandVertically(),
@@ -809,7 +809,7 @@ private fun removeSearchOperators(query: String, vararg keys: String): String {
         .trim()
 }
 
-private fun galleryFilterLabel(filter: String): String = when (filter) {
+private fun galleryFilterLabel(filter: String, query: String): String = when {\n    hasSearchOperator(query, "date") -> "Today"\n    hasSearchOperator(query, "month") -> "This month"\n    hasSearchOperator(query, "year") -> "This year"\n    hasSearchOperatorValue(query, "gps", "true") -> "With GPS"\n    hasSearchOperatorValue(query, "gps", "false") -> "No GPS"\n    else -> when (filter) {
     "PHOTOS" -> "Photos"
     "VIDEOS" -> "Videos"
     "FAVORITES" -> "Favorites"
