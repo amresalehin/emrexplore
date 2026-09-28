@@ -169,7 +169,7 @@ class MediaSearchPagingSource(
         val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val args = Bundle().apply {
                 putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-                putString(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, selectionArgs)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, selectionArgs)
                 putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
                 putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
                 putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
