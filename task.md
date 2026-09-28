@@ -415,3 +415,15 @@ Last updated: 2026-09-27
 - [x] Use a search-specific fullscreen source so viewer navigation stays within filtered results.
 - [x] Remove legacy full-library Gallery media materialization from FileRepository.
 - [x] Request ACCESS_MEDIA_LOCATION only for GPS/location search.
+
+
+### Home Screen Simplification — 2026-09-28
+- [x] Remove the storage overview card from the default Home dashboard.
+- [x] Remove the standalone Categories section from the default Home dashboard.
+- [x] Remove Favorites & Starred from the default Home dashboard.
+- [x] Remove Recycle Bin from the default Home dashboard.
+- [x] Remove Preferences & Room Index status from the default Home dashboard.
+- [x] Remove Home search category filter chips so the default screen contains only the search bar, Recent Items, and Quick Tiles.
+- [x] Keep existing search result behavior and category drill-down navigation intact.
+- [x] Rename the recent section to "Recent Items".
+- [x] Present the existing file categories as "Quick Tiles".
