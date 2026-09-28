@@ -227,7 +227,7 @@ fun GalleryScreen(
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
-                            )
+                            }
                             IconButton(onClick = {
                                 viewModel.setGallerySubTab(
                                     if (uiState.gallerySubTab == GallerySubTab.TIMELINE) GallerySubTab.ALBUMS else GallerySubTab.TIMELINE
