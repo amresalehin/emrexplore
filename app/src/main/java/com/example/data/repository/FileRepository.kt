@@ -614,14 +614,47 @@ class FileRepository(private val context: Context) {
     }
 
     suspend fun getCachedFiles(dirPath: String, showHidden: Boolean): List<FileItem>? = withContext(Dispatchers.IO) {
+        val dir = File(dirPath)
+        if (!dir.exists() || !dir.isDirectory) return@withContext null
+
+        // Never trust a stale in-memory/Room directory snapshot. External file
+        // managers, MediaStore, downloads, and other apps can change a folder
+        // without going through this repository.
+        val actualNames = try {
+            dir.list()?.asSequence()
+                ?.filter { showHidden || !it.startsWith(".") }
+                ?.toSet()
+        } catch (e: SecurityException) {
+            null
+        }
+
+        // If the directory cannot be enumerated, don't return a partial/stale
+        // cache. Let the caller fall back to the normal filesystem path.
+        if (actualNames == null) return@withContext null
+
         val inMemory = folderCache[dirPath]
         if (inMemory != null) {
-            return@withContext if (showHidden) inMemory else inMemory.filter { !it.name.startsWith(".") }
+            val cachedNames = inMemory.asSequence()
+                .filter { showHidden || !it.name.startsWith(".") }
+                .map { it.name }
+                .toSet()
+
+            if (cachedNames == actualNames) {
+                return@withContext inMemory.let {
+                    if (showHidden) it else it.filter { !it.name.startsWith(".") }
+                }
+            }
+
+            // Cache is stale/incomplete. Do not let it hide real filesystem entries.
+            folderCache.remove(dirPath)
         }
 
         try {
             val entities = fileIndexDao.getFilesByParent(dirPath)
-            if (entities.isNotEmpty()) {
+            val visibleEntities = entities.filter { showHidden || !it.name.startsWith(".") }
+            val indexedNames = visibleEntities.map { it.name }.toSet()
+
+            if (indexedNames == actualNames) {
                 val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
                 val items = entities.map { entity ->
                     FileItem(
@@ -643,6 +676,9 @@ class FileRepository(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+
+        // Null deliberately means "cache cannot be trusted"; getFilesPaged()
+        // will enumerate the live directory and rebuild the current page.
         null
     }
 
