@@ -224,7 +224,7 @@ fun GallerySearchScreen(
                                         SearchChip(
                                             label = album.name,
                                             icon = Icons.Default.Folder,
-                                            onClick = { viewModel.setGallerySearchQuery("album:\"\${album.name}\"") }
+                                            onClick = { viewModel.setGallerySearchQuery("album:\"${album.name}\"") }
                                         )
                                     }
                                 }
