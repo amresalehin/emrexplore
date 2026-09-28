@@ -106,6 +106,7 @@ data class UiState(
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
     val galleryFilter: String = "ALL", // ALL, PHOTOS, VIDEOS, FAVORITES
     val gallerySearchQuery: String = "",
+    val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
     val allMediaItems: List<MediaItem> = emptyList(),
     val mediaItems: List<MediaItem> = emptyList(),
@@ -847,12 +848,23 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun submitGallerySearch() {
         val query = _uiState.value.gallerySearchQuery.trim()
-        _uiState.update { it.copy(gallerySearchActive = query.isNotBlank()) }
+        _uiState.update {
+            it.copy(
+                gallerySearchSubmittedQuery = query,
+                gallerySearchActive = query.isNotBlank()
+            )
+        }
         gallerySearchFlow.value = query
     }
 
     fun clearGallerySearch() {
-        _uiState.update { it.copy(gallerySearchQuery = "", gallerySearchActive = false) }
+        _uiState.update {
+            it.copy(
+                gallerySearchQuery = "",
+                gallerySearchSubmittedQuery = "",
+                gallerySearchActive = false
+            )
+        }
         gallerySearchFlow.value = ""
     }
 
@@ -944,7 +956,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 fullscreenTotalCount = list.size,
                 fullscreenSource = source,
                 fullscreenAlbumId = albumId,
-                fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchQuery else "",
+                fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchSubmittedQuery else "",
                 fullscreenSearchFavoriteOnly = if (source == FullscreenMediaSource.SEARCH) searchFavoriteOnly else false,
                 fullscreenLoading = source != null
             )
@@ -961,7 +973,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     }
                     val window = mediaRepository.loadSearchViewerWindow(
                         item = item,
-                        query = stateBeforeOpen.gallerySearchQuery,
+                        query = stateBeforeOpen.gallerySearchSubmittedQuery,
                         filter = filter,
                         favoritesOnly = searchFavoriteOnly,
                         radius = 2
