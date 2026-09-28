@@ -732,8 +732,8 @@ class FileRepository(private val context: Context) {
                 val roomCount = fileIndexDao.getCountByParent(dirPath)
                 val indexedDirectory = fileIndexDao.hasIndexedPath(dirPath)
                 val indexedParent = fileIndexDao.getByPath(dirPath)
-                val filesystemFresh = indexedParent?.isDirectory == true &&
-                    indexedParent.lastModified == dir.lastModified()
+                val filesystemFresh = indexedParent == null ||
+                    (indexedParent.isDirectory && indexedParent.lastModified == dir.lastModified())
                 if ((roomCount > 0 || indexedDirectory) && filesystemFresh) {
                     // True lazy paging: SQLite returns only the requested page.
                     val totalCount = fileIndexDao.getVisibleCountByParent(dirPath, showHidden)

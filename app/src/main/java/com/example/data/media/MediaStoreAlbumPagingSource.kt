@@ -10,11 +10,13 @@ import android.provider.MediaStore
 import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.example.data.model.MediaItem
+import com.example.ui.viewmodel.GallerySortOption
 import kotlinx.coroutines.CancellationException
 
 class MediaStoreAlbumPagingSource(
     context: Context,
-    private val bucketId: String
+    private val bucketId: String,
+    private val sort: GallerySortOption = GallerySortOption.DATE_DESC
 ) : PagingSource<Int, MediaItem>() {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
@@ -60,8 +62,15 @@ class MediaStoreAlbumPagingSource(
             bucketId
         )
         val uri = MediaStore.Files.getContentUri("external")
-        val sortOrder = MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-            MediaStore.Files.FileColumns._ID + " DESC"
+        val sortOrder = when (sort) {
+            GallerySortOption.DATE_DESC -> MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.DATE_ASC -> MediaStore.Files.FileColumns.DATE_ADDED + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+            GallerySortOption.NAME_ASC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+            GallerySortOption.NAME_DESC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.SIZE_ASC -> MediaStore.Files.FileColumns.SIZE + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+            GallerySortOption.SIZE_DESC -> MediaStore.Files.FileColumns.SIZE + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.TYPE -> MediaStore.Files.FileColumns.MIME_TYPE + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+        }
 
         val queryArgs = Bundle().apply {
             putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)

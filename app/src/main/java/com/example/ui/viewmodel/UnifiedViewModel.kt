@@ -1066,12 +1066,13 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
 
-                val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId)
+                val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId, stateBeforeOpen.gallerySortOption)
                 val window = mediaRepository.loadViewerWindow(
                     source,
                     absoluteIndex,
                     radius = 2,
-                    albumId = albumId
+                    albumId = albumId,
+                    sort = stateBeforeOpen.gallerySortOption
                 )
                 _uiState.update {
                     it.copy(
@@ -1155,7 +1156,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         query = state.fullscreenSearchQuery,
                         filter = filter,
                         favoritesOnly = state.fullscreenSearchFavoriteOnly,
-                        radius = 2
+                        radius = 2,
+                        sort = state.gallerySortOption
                     )
                     _uiState.update {
                         it.copy(
@@ -1173,7 +1175,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     source,
                     targetIndex,
                     radius = 2,
-                    albumId = state.fullscreenAlbumId
+                    albumId = state.fullscreenAlbumId,
+                    sort = state.gallerySortOption
                 )
                 _uiState.update {
                     it.copy(
