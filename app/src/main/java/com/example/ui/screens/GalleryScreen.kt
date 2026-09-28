@@ -204,6 +204,10 @@ fun GalleryScreen(
                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                         )
+                        SearchQuickFilterRow(
+                            uiState = uiState,
+                            viewModel = viewModel,
+                        )
                         IconButton(onClick = { viewModel.setGallerySearchActive(false) }) {
                             Icon(Icons.Default.Close, contentDescription = "Close search")
                         }
@@ -463,6 +467,142 @@ private fun PagedMediaGrid(
         EmptyGalleryMessage("Could not load media. Pull to refresh.")
     }
 }
+
+@Composable
+private fun SearchQuickFilterRow(
+    uiState: UiState,
+    viewModel: UnifiedViewModel
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FilterChip(
+            selected = uiState.galleryFilter == "PHOTOS",
+            onClick = {
+                viewModel.setGalleryFilter("PHOTOS")
+                viewModel.setGallerySearchQuery(
+                    removeSearchOperators(uiState.gallerySearchQuery, "type")
+                )
+            },
+            label = { Text("Photos") }
+        )
+        FilterChip(
+            selected = uiState.galleryFilter == "VIDEOS",
+            onClick = {
+                viewModel.setGalleryFilter("VIDEOS")
+                viewModel.setGallerySearchQuery(
+                    removeSearchOperators(uiState.gallerySearchQuery, "type")
+                )
+            },
+            label = { Text("Videos") }
+        )
+        FilterChip(
+            selected = uiState.galleryFilter == "FAVORITES",
+            onClick = {
+                viewModel.setGalleryFilter("FAVORITES")
+                viewModel.setGallerySearchActive(true)
+            },
+            label = { Text("Favorites") }
+        )
+        FilterChip(
+            selected = hasSearchOperator(uiState.gallerySearchQuery, "date"),
+            onClick = {
+                viewModel.setGallerySearchQuery(
+                    replaceSearchOperators(
+                        uiState.gallerySearchQuery,
+                        setOf("date", "taken", "year", "month", "after", "before"),
+                        "date:" + todayToken()
+                    )
+                )
+            },
+            label = { Text("Today") }
+        )
+        FilterChip(
+            selected = hasSearchOperator(uiState.gallerySearchQuery, "month"),
+            onClick = {
+                viewModel.setGallerySearchQuery(
+                    replaceSearchOperators(
+                        uiState.gallerySearchQuery,
+                        setOf("date", "taken", "year", "month", "after", "before"),
+                        "month:" + monthToken()
+                    )
+                )
+            },
+            label = { Text("This month") }
+        )
+        FilterChip(
+            selected = hasSearchOperator(uiState.gallerySearchQuery, "year"),
+            onClick = {
+                viewModel.setGallerySearchQuery(
+                    replaceSearchOperators(
+                        uiState.gallerySearchQuery,
+                        setOf("date", "taken", "year", "month", "after", "before"),
+                        "year:" + yearToken()
+                    )
+                )
+            },
+            label = { Text("This year") }
+        )
+        FilterChip(
+            selected = hasSearchOperatorValue(uiState.gallerySearchQuery, "gps", "true"),
+            onClick = {
+                viewModel.setGallerySearchQuery(
+                    replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:true")
+                )
+            },
+            label = { Text("With GPS") }
+        )
+        FilterChip(
+            selected = hasSearchOperatorValue(uiState.gallerySearchQuery, "gps", "false"),
+            onClick = {
+                viewModel.setGallerySearchQuery(
+                    replaceSearchOperators(uiState.gallerySearchQuery, setOf("gps"), "gps:false")
+                )
+            },
+            label = { Text("No GPS") }
+        )
+    }
+}
+
+private fun hasSearchOperator(query: String, key: String): Boolean =
+    Regex("""(?i)(^|\\s)$key:""").containsMatchIn(query)
+
+private fun hasSearchOperatorValue(query: String, key: String, value: String): Boolean =
+    Regex("""(?i)(^|\\s)$key:$value(?=\\s|$)""").containsMatchIn(query)
+
+private fun removeSearchOperators(query: String, vararg keys: String): String {
+    if (query.isBlank()) return ""
+    val pattern = keys.joinToString("|") { Regex.escape(it) }
+    return query
+        .replace(
+            Regex("""(?i)(^|\\s)(?:$pattern):(?:"[^"]*"|\\S+)"""),
+            " "
+        )
+        .replace(Regex("""\\s+"""), " ")
+        .trim()
+}
+
+private fun replaceSearchOperators(
+    query: String,
+    keys: Set<String>,
+    replacement: String
+): String =
+    (removeSearchOperators(query, *keys.toTypedArray()) + " " + replacement)
+        .trim()
+        .replace(Regex("""\\s+"""), " ")
+
+private fun todayToken(): String =
+    java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+
+private fun monthToken(): String =
+    java.text.SimpleDateFormat("yyyy-MM", Locale.US).format(java.util.Date())
+
+private fun yearToken(): String =
+    java.text.SimpleDateFormat("yyyy", Locale.US).format(java.util.Date())
 
 @Composable
 private fun MediaGrid(
