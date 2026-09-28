@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - apk-build-20260928
+      - beta-hardening-20260929
   workflow_dispatch:
 
 permissions:
@@ -51,6 +52,12 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace --no-daemon
+
+      - name: Run lint
+        run: gradle :app:lintDebug --stacktrace --no-daemon
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon
