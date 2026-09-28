@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ViewColumn
@@ -51,6 +52,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -133,10 +136,32 @@ fun GalleryScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (uiState.selectedAlbum != null) {
+                    if (uiState.gallerySearchActive && uiState.selectedAlbum == null && uiState.gallerySubTab == GallerySubTab.TIMELINE) {
+                        TextField(
+                            value = uiState.gallerySearchQuery,
+                            onValueChange = viewModel::setGallerySearchQuery,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("Search photos, videos, folders…") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = viewModel::clearGallerySearch) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                }
+                            },
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                        )
+                        IconButton(onClick = { viewModel.setGallerySearchActive(false) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close search")
+                        }
+                    } else if (uiState.selectedAlbum != null) {
                         IconButton(onClick = { viewModel.selectAlbum(null) }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Albums")
                         }
@@ -154,7 +179,12 @@ fun GalleryScreen(
                             modifier = Modifier.weight(1f)
                         )
 
-                        // Column count cycler (2 -> 3 -> 4 -> 2)
+                        if (uiState.gallerySubTab == GallerySubTab.TIMELINE && uiState.galleryFilter != "FAVORITES") {
+                            IconButton(onClick = { viewModel.setGallerySearchActive(true) }) {
+                                Icon(Icons.Default.Search, contentDescription = "Search gallery")
+                            }
+                        }
+
                         IconButton(onClick = {
                             val nextCols = if (uiState.galleryColumns >= 4) 2 else uiState.galleryColumns + 1
                             viewModel.setGalleryColumns(nextCols)
@@ -164,9 +194,7 @@ fun GalleryScreen(
 
                         IconButton(onClick = {
                             if (uiState.gallerySubTab == GallerySubTab.ALBUMS) {
-                                scope.launch {
-                            discoveredAlbums = MediaAlbumRepository(context).getAlbums()
-                        }
+                                scope.launch { discoveredAlbums = MediaAlbumRepository(context).getAlbums() }
                             } else {
                                 pagedMedia.refresh()
                             }
