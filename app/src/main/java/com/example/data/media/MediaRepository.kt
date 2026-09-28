@@ -203,7 +203,6 @@ class MediaRepository(context: Context) {
                 val op = if (asc) "<" else ">"
                 MediaStore.Files.FileColumns.SIZE + " " + op + " ? OR (" + MediaStore.Files.FileColumns.SIZE + " = ? AND " + MediaStore.Files.FileColumns._ID + " " + op + " ?)" to listOf(item.size.toString(), item.size.toString(), rawId.toString())
             }
-            com.example.ui.viewmodel.GallerySortOption.TYPE -> MediaStore.Files.FileColumns.MIME_TYPE + " COLLATE NOCASE < ? OR (" + MediaStore.Files.FileColumns.MIME_TYPE + " COLLATE NOCASE = ? AND " + MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE < ?)" to listOf(item.mimeType, item.mimeType, item.name)
         }
         var selection = "($typeSelection) AND ($beforeSelection)"
         args += beforeArgs
