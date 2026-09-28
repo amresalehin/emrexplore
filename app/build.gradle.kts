@@ -41,12 +41,7 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
-    beta {
-      initWith(getByName("debug"))
-      isDebuggable = false
-      versionNameSuffix = "-beta"
-      signingConfig = signingConfigs.getByName("debugConfig")
-    }
+
   }
 
   compileOptions {
