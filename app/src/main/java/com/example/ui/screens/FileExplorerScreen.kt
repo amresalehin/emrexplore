@@ -700,12 +700,7 @@ fun FileExplorerScreen(
                                     leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
                                     onClick = {
                                         try {
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = item.mimeType
-                                                putExtra(Intent.EXTRA_STREAM, item.uri)
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share File"))
+                                            FileShareUtils.shareFile(context, File(item.path), item.mimeType)
                                         } catch (e: Exception) {
                                             e.printStackTrace()
                                         }

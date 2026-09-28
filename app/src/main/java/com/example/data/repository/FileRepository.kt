@@ -1762,14 +1762,37 @@ class FileRepository(private val context: Context) {
         val zipFile = File(zipPath)
         val target = File(destDir).apply { mkdirs() }
         try {
+            val canonicalTarget = target.canonicalFile
+            val targetPrefix = canonicalTarget.path.trimEnd(File.separatorChar) + File.separator
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
                 while (entry != null) {
-                    val outFile = File(target, entry.name)
+                    val entryName = entry.name
+                    if (entryName.isBlank()) {
+                        zis.closeEntry()
+                        entry = zis.nextEntry
+                        continue
+                    }
+
+                    // Zip Slip protection: the resolved entry must remain inside
+                    // the extraction root.
+                    val outFile = File(canonicalTarget, entryName).canonicalFile
+                    val safePath = outFile.path == canonicalTarget.path ||
+                        outFile.path.startsWith(targetPrefix)
+                    if (!safePath) {
+                        throw IOException("Unsafe ZIP entry: $entryName")
+                    }
+
                     if (entry.isDirectory) {
-                        outFile.mkdirs()
+                        if (!outFile.exists() && !outFile.mkdirs()) {
+                            throw IOException("Unable to create directory: ${outFile.path}")
+                        }
                     } else {
-                        outFile.parentFile?.mkdirs()
+                        outFile.parentFile?.let { parent ->
+                            if (!parent.exists() && !parent.mkdirs()) {
+                                throw IOException("Unable to create directory: ${parent.path}")
+                            }
+                        }
                         FileOutputStream(outFile).use { fos ->
                             zis.copyTo(fos)
                         }

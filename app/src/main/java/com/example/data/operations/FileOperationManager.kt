@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -80,6 +81,24 @@ class FileOperationManager(
 
         currentJob = scope.launch {
             val validSources = sourcePaths.map { File(it) }.filter { it.exists() }
+
+            // Reject self-targets and recursive directory targets before mutation.
+            if (type == OperationType.COPY || type == OperationType.MOVE) {
+                val canonicalTargetDir = try { File(targetDir).canonicalFile } catch (_: IOException) { File(targetDir).absoluteFile }
+                val invalidTarget = validSources.firstOrNull { src ->
+                    val canonicalSource = try { src.canonicalFile } catch (_: IOException) { src.absoluteFile }
+                    val destination = File(canonicalTargetDir, src.name).canonicalFile
+                    destination.path == canonicalSource.path ||
+                        (src.isDirectory && destination.path.startsWith(canonicalSource.path.trimEnd(File.separatorChar) + File.separator))
+                }
+                if (invalidTarget != null) {
+                    _progress.update {
+                        it.copy(id = opId, type = type, status = OperationStatus.ERROR,
+                            errorMessage = "Destination cannot be the same as, or inside, the source.")
+                    }
+                    return@launch
+                }
+            }
             if (validSources.isEmpty()) {
                 _progress.update {
                     it.copy(
@@ -383,9 +402,9 @@ class FileOperationManager(
     }
 
     private suspend fun checkPausedOrCancelled() {
-        if (isPaused.get()) {
-            pauseSignal.await()
-        }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        if (isPaused.get()) pauseSignal.await()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
     }
 
     private suspend fun askConflictResolution(conflict: FileConflict): ConflictResolution {
