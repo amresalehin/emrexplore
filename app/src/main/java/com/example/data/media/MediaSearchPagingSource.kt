@@ -287,7 +287,7 @@ private object MediaSearchParser {
     private fun matchesExif(item: MediaItem): Boolean {
         if (item.isVideo) return parsed.near == null && parsed.hasGps != true && parsed.exifTerms.isEmpty()
         return try {
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.setRequireOriginal(item.uri) else item.uri
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && (parsed.hasGps == true || parsed.near != null)) MediaStore.setRequireOriginal(item.uri) else item.uri
             resolver.openInputStream(uri)?.use { stream ->
                 val exif = ExifInterface(stream)
                 val searchable = listOf(
