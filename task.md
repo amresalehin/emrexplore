@@ -408,3 +408,10 @@ Last updated: 2026-09-27
 - [ ] Persist extracted EXIF metadata for faster repeated metadata searches.
 - [ ] Add reverse-geocoded place-name indexing (e.g. city/country).
 - [ ] Add semantic/AI search over enriched metadata.
+
+- [x] Replace per-search EXIF opening with persistent lazy Room metadata caching.
+- [x] Add query geocoding cache for location:Place searches.
+- [x] Search within Favorites through the same PagingSource.
+- [x] Use a search-specific fullscreen source so viewer navigation stays within filtered results.
+- [x] Remove legacy full-library Gallery media materialization from FileRepository.
+- [x] Request ACCESS_MEDIA_LOCATION only for GPS/location search.
