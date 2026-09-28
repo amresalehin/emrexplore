@@ -809,11 +809,18 @@ private fun removeSearchOperators(query: String, vararg keys: String): String {
         .trim()
 }
 
-private fun galleryFilterLabel(filter: String, query: String): String = when {\n    hasSearchOperator(query, "date") -> "Today"\n    hasSearchOperator(query, "month") -> "This month"\n    hasSearchOperator(query, "year") -> "This year"\n    hasSearchOperatorValue(query, "gps", "true") -> "With GPS"\n    hasSearchOperatorValue(query, "gps", "false") -> "No GPS"\n    else -> when (filter) {
-    "PHOTOS" -> "Photos"
-    "VIDEOS" -> "Videos"
-    "FAVORITES" -> "Favorites"
-    else -> "Filter"
+private fun galleryFilterLabel(filter: String, query: String): String = when {
+    hasSearchOperator(query, "date") -> "Today"
+    hasSearchOperator(query, "month") -> "This month"
+    hasSearchOperator(query, "year") -> "This year"
+    hasSearchOperatorValue(query, "gps", "true") -> "With GPS"
+    hasSearchOperatorValue(query, "gps", "false") -> "No GPS"
+    else -> when (filter) {
+        "PHOTOS" -> "Photos"
+        "VIDEOS" -> "Videos"
+        "FAVORITES" -> "Favorites"
+        else -> "Filter"
+    }
 }
 
 private fun gallerySortLabel(option: GallerySortOption): String = when (option) {
