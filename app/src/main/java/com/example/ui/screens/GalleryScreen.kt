@@ -423,7 +423,6 @@ fun GalleryScreen(
     }
 }
 
-}
 
 @Composable
 private fun PagedMediaGrid(
