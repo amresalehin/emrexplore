@@ -299,7 +299,7 @@ class FileRepository(private val context: Context) {
 
         for (file in children) {
             val name = file.name
-            if (name.startsWith(".") && name != ".trash") continue
+            if (name.startsWith(".")) continue
             if (name == "Android" || name == "cache") continue
 
             val isDir = file.isDirectory
@@ -759,9 +759,7 @@ class FileRepository(private val context: Context) {
                             mimeType = entity.mimeType,
                             extension = entity.extension,
                             isFavorite = favSet.contains(entity.path),
-                            childCount = if (entity.isDirectory) {
-                                fileIndexDao.getCountByParent(entity.path)
-                            } else 0,
+                            childCount = if (entity.isDirectory) entity.childCount else 0,
                             uri = Uri.fromFile(file)
                         )
                     }

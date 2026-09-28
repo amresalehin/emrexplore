@@ -1,6 +1,7 @@
 package com.example.data.metadata
 
 import android.media.ExifInterface
+import android.system.Os
 import java.io.File
 
 /**
@@ -62,7 +63,7 @@ object MetadataWriter {
                 }
             }
             exif.saveAttributes()
-            if (!temp.renameTo(file)) throw IllegalStateException("Unable to replace original metadata file")
+            Os.rename(temp.absolutePath, file.absolutePath)
         } finally {
             if (temp.exists()) temp.delete()
         }

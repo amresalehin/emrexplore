@@ -61,6 +61,7 @@ import com.example.ui.screens.FullscreenMediaViewer
 import com.example.ui.screens.GalleryScreen
 import com.example.ui.screens.GallerySearchScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.MetadataInspectorSheet
 import com.example.ui.screens.TextEditorScreen
 import com.example.ui.screens.ZipViewerDialog
 import com.example.ui.theme.FossifyTheme
@@ -332,7 +333,8 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
             totalCount = uiState.fullscreenTotalCount.coerceAtLeast(uiState.fullscreenMediaList.size),
             onClose = { viewModel.closeFullscreenMedia() },
             onIndexChange = { newIdx -> viewModel.moveFullscreenMedia(newIdx) },
-            onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) }
+            onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) },
+            onInspectMetadata = { mediaItem -> viewModel.inspectMetadata(mediaItem) }
         )
     }
 
@@ -364,8 +366,13 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     if (uiState.activeDetailItem != null) {
         FilePropertiesDialog(
             item = uiState.activeDetailItem!!,
-            onDismiss = { viewModel.closeProperties() }
+            onDismiss = { viewModel.closeProperties() },
+            onInspectMetadata = { fileItem -> viewModel.inspectMetadata(fileItem) }
         )
+    }
+
+    if (uiState.metadataReport != null) {
+        MetadataInspectorSheet(report = uiState.metadataReport!!, onDismiss = { viewModel.closeMetadataInspector() })
     }
 
     // 5. Initial All Files Access Prompt Dialog

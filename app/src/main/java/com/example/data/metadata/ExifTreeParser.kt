@@ -11,7 +11,7 @@ class ExifTreeParser {
 
     fun parse(file: File): List<ExifDirectoryNode> {
         val bytes = try {
-            file.inputStream().use { it.readBytes() }
+            MetadataReadUtils.readPrefix(file)
         } catch (e: Exception) {
             null
         }

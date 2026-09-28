@@ -9,7 +9,7 @@ class XmpParser {
 
     fun parse(file: File): XmpReport {
         return try {
-            val bytes = file.inputStream().use { it.readBytes() }
+            val bytes = MetadataReadUtils.readPrefix(file)
             parseFromBytes(bytes)
         } catch (e: Exception) {
             XmpReport(hasXmp = false, rawXml = "", schemas = emptyList(), allProperties = emptyList())

@@ -7,7 +7,7 @@ class IptcParser {
 
     fun parse(file: File): IptcReport {
         return try {
-            val bytes = file.inputStream().use { it.readBytes() }
+            val bytes = MetadataReadUtils.readPrefix(file)
             parseFromBytes(bytes)
         } catch (e: Exception) {
             IptcReport(hasIptc = false, groups = emptyList(), allDatasets = emptyList())

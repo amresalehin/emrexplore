@@ -28,9 +28,9 @@ class MediaRepository(context: Context) {
 
     private val appContext = context.applicationContext
 
-    fun favoritesPager(): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(
+    fun favoritesPager(sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(
         config = PagingConfig(pageSize = MediaStorePagingSource.MIN_PAGE_SIZE, initialLoadSize = MediaStorePagingSource.MIN_PAGE_SIZE, prefetchDistance = 15, maxSize = MediaStorePagingSource.MIN_PAGE_SIZE * 3, enablePlaceholders = false),
-        pagingSourceFactory = { FavoriteMediaPagingSource(appContext) }
+        pagingSourceFactory = { FavoriteMediaPagingSource(appContext, sort) }
     ).flow
 
     fun albumPager(bucketId: String, sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(

@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -49,8 +50,9 @@ fun TextEditorScreen(
     onClose: () -> Unit
 ) {
     val scrollState = rememberScrollState()
-    val linesCount = content.lines().size
-    val wordsCount = if (content.isBlank()) 0 else content.trim().split("\\s+".toRegex()).size
+    val isLargeFile = fileItem.size > 10L * 1024L * 1024L
+    val linesCount = remember(content) { content.count { it == '\n' } + if (content.isEmpty()) 0 else 1 }
+    val wordsCount = remember(content) { if (content.isBlank()) 0 else content.trim().split(Regex("\\s+")).size }
 
     Scaffold(
         topBar = {
@@ -63,7 +65,7 @@ fun TextEditorScreen(
                             maxLines = 1
                         )
                         Text(
-                            text = "${formatFileSize(fileItem.size)} • $linesCount lines • $wordsCount words",
+                            text = "${formatFileSize(fileItem.size)} • $linesCount lines • $wordsCount words${if (isLargeFile) " • read-only preview" else ""}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -78,7 +80,7 @@ fun TextEditorScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { onToggleEdit(!isEditing) }) {
+                    IconButton(onClick = { if (!isLargeFile) onToggleEdit(!isEditing) }, enabled = !isLargeFile) {
                         Icon(
                             imageVector = if (isEditing) Icons.Default.Visibility else Icons.Default.Edit,
                             contentDescription = if (isEditing) "View Mode" else "Edit Mode",
@@ -119,7 +121,8 @@ fun TextEditorScreen(
                         fontSize = 14.sp,
                         lineHeight = 20.sp
                     ),
-                    placeholder = { Text("Type file content here...") }
+                    placeholder = { Text("Type file content here...") },
+                    readOnly = isLargeFile
                 )
             } else {
                 Surface(

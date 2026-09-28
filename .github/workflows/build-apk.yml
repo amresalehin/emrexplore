@@ -5,6 +5,7 @@ on:
     branches:
       - apk-build-20260928
       - beta-hardening-20260929
+      - beta-release-hardening-20260929
   workflow_dispatch:
 
 permissions:
@@ -59,19 +60,20 @@ jobs:
       - name: Run lint
         run: gradle :app:lintDebug --stacktrace --no-daemon
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon
+      - name: Build beta APK
+        run: gradle :app:assembleBeta --stacktrace --no-daemon
 
       - name: Verify APK
         shell: bash
         run: |
           set -e
-          ls -lh app/build/outputs/apk/debug/*.apk
-          file app/build/outputs/apk/debug/*.apk
+          ls -lh app/build/outputs/apk/beta/*.apk
+          file app/build/outputs/apk/beta/*.apk
+          sha256sum app/build/outputs/apk/beta/*.apk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: emrexplore-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: emrexplore-beta-apk
+          path: app/build/outputs/apk/beta/*.apk
           if-no-files-found: error

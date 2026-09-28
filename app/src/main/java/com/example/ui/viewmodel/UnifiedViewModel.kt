@@ -9,6 +9,8 @@ import com.example.data.local.FavoriteEntity
 import com.example.data.local.IndexStatusEntity
 import com.example.data.local.RecentEntity
 import com.example.data.local.TrashEntity
+import com.example.data.metadata.MetadataExtractor
+import com.example.data.metadata.MetadataReport
 import com.example.data.model.CategoryType
 import com.example.data.model.FileItem
 import com.example.data.model.MediaAlbum
@@ -140,6 +142,7 @@ data class UiState(
     val zipEntries: List<String> = emptyList(),
     val isExtractingZip: Boolean = false,
     val activeDetailItem: FileItem? = null,
+    val metadataReport: MetadataReport? = null,
 
     // Audio Mini-Player
     val activeAudioFile: FileItem? = null,
@@ -170,6 +173,7 @@ data class UiState(
 class UnifiedViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FileRepository(application)
+    private val metadataExtractor = MetadataExtractor(application)
     private val mediaRepository = MediaRepository(application)
     private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
     private val galleryRefreshFlow = MutableStateFlow(0L)
@@ -189,7 +193,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         ) { filter, query, _, sort -> Triple(filter, query.trim(), sort) }
         .flatMapLatest { (filter, query, sort) ->
             if (filter == null && query.isBlank()) {
-                mediaRepository.favoritesPager()
+                mediaRepository.favoritesPager(_uiState.value.gallerySortOption)
             } else if (query.isBlank()) {
                 mediaRepository.pager(filter ?: MediaFilter.ALL, sort)
             } else {
@@ -210,6 +214,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private var loadFilesJob: Job? = null
     private var fileSearchJob: Job? = null
     private var fullscreenLoadJob: Job? = null
+    private var lastPermissionRefreshAtMs: Long = 0L
 
     init {
         // Collect decoupled file operations progress
@@ -413,6 +418,10 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onPermissionsGranted() {
+        val now = System.currentTimeMillis()
+        if (now - lastPermissionRefreshAtMs < 750L) return
+        lastPermissionRefreshAtMs = now
+
         val root = repository.rootPath
         val current = _uiState.value.currentPath
         val filesDir = getApplication<Application>().filesDir.absolutePath
@@ -1355,6 +1364,28 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun closeProperties() {
         _uiState.update { it.copy(activeDetailItem = null) }
+    }
+
+    fun inspectMetadata(fileItem: FileItem) {
+        if (fileItem.isDirectory) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val report = runCatching { metadataExtractor.extract(File(fileItem.path)) }.getOrNull()
+            _uiState.update { it.copy(metadataReport = report) }
+        }
+    }
+
+    fun inspectMetadata(mediaItem: MediaItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val report = runCatching {
+                if (mediaItem.path.isNotBlank() && File(mediaItem.path).canRead()) metadataExtractor.extract(File(mediaItem.path))
+                else metadataExtractor.extractFromUri(mediaItem.uri, mediaItem.name, mediaItem.size, mediaItem.path)
+            }.getOrNull()
+            _uiState.update { it.copy(metadataReport = report) }
+        }
+    }
+
+    fun closeMetadataInspector() {
+        _uiState.update { it.copy(metadataReport = null) }
     }
 
     // Audio Playback

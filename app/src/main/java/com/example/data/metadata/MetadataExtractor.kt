@@ -16,7 +16,7 @@ class MetadataExtractor(private val context: Context) {
         val iptcReport = iptcParser.parse(file)
         val xmpReport = xmpParser.parse(file)
         val segments = try {
-            val bytes = file.inputStream().use { it.readBytes() }
+            val bytes = MetadataReadUtils.readPrefix(file)
             detectJpegSegments(bytes)
         } catch (e: Exception) {
             emptyList()

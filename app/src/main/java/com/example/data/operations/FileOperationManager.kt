@@ -35,6 +35,13 @@ class FileOperationManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var currentJob: Job? = null
 
+    @Volatile
+    private var activeOperationId: String? = null
+
+    private fun updateProgressForOperation(operationId: String, transform: (FileOperationProgress) -> FileOperationProgress) {
+        if (activeOperationId == operationId) _progress.update(transform)
+    }
+
     private val _progress = MutableStateFlow(FileOperationProgress())
     val progress: StateFlow<FileOperationProgress> = _progress.asStateFlow()
 
@@ -67,6 +74,8 @@ class FileOperationManager(
         targetDir: String,
         toTrash: Boolean
     ) {
+        val opId = UUID.randomUUID().toString()
+        activeOperationId = opId
         currentJob?.cancel()
         isPaused.set(false)
         pauseSignal = CompletableDeferred<Unit>().apply { complete(Unit) }
@@ -76,8 +85,6 @@ class FileOperationManager(
         lastSourcePaths = sourcePaths
         lastTargetDir = targetDir
         lastToTrash = toTrash
-
-        val opId = UUID.randomUUID().toString()
 
         currentJob = scope.launch {
             val validSources = sourcePaths.map { File(it) }.filter { it.exists() }
@@ -92,7 +99,7 @@ class FileOperationManager(
                         (src.isDirectory && destination.path.startsWith(canonicalSource.path.trimEnd(File.separatorChar) + File.separator))
                 }
                 if (invalidTarget != null) {
-                    _progress.update {
+                    updateProgressForOperation(opId) {
                         it.copy(id = opId, type = type, status = OperationStatus.ERROR,
                             errorMessage = "Destination cannot be the same as, or inside, the source.")
                     }
@@ -100,7 +107,7 @@ class FileOperationManager(
                 }
             }
             if (validSources.isEmpty()) {
-                _progress.update {
+                updateProgressForOperation(opId) {
                     it.copy(
                         id = opId,
                         type = type,
@@ -137,7 +144,7 @@ class FileOperationManager(
                 if (usableSpace in 1 until requiredBytes) {
                     val reqMb = requiredBytes / (1024 * 1024)
                     val availMb = usableSpace / (1024 * 1024)
-                    _progress.update {
+                    updateProgressForOperation(opId) {
                         it.copy(
                             id = opId,
                             type = type,
@@ -150,7 +157,7 @@ class FileOperationManager(
             }
 
             // Initialize progress
-            _progress.update {
+            updateProgressForOperation(opId) {
                 FileOperationProgress(
                     id = opId,
                     type = type,
@@ -198,7 +205,7 @@ class FileOperationManager(
                                             FileOperationProgress(speedBytesPerSec = speed).formattedSpeed
                                         )
 
-                                        _progress.update { current ->
+                                        updateProgressForOperation(opId) { current ->
                                             current.copy(
                                                 bytesProcessed = processedBytesSum,
                                                 speedBytesPerSec = speed,
@@ -211,7 +218,7 @@ class FileOperationManager(
                                 },
                                 onFileCompleted = { completedFile ->
                                     processedFilesCount++
-                                    _progress.update { current ->
+                                    updateProgressForOperation(opId) { current ->
                                         current.copy(
                                             currentFileName = completedFile.name,
                                             filesProcessed = processedFilesCount,
@@ -235,7 +242,7 @@ class FileOperationManager(
                                 val fileSize = if (src.isDirectory) 0L else src.length()
                                 processedBytesSum += fileSize
                                 processedFilesCount++
-                                _progress.update { current ->
+                                updateProgressForOperation(opId) { current ->
                                     current.copy(
                                         currentFileName = src.name,
                                         filesProcessed = processedFilesCount,
@@ -253,7 +260,7 @@ class FileOperationManager(
                                     },
                                     onFileCompleted = { completedFile ->
                                         processedFilesCount++
-                                        _progress.update { current ->
+                                        updateProgressForOperation(opId) { current ->
                                             current.copy(
                                                 currentFileName = completedFile.name,
                                                 filesProcessed = processedFilesCount,
@@ -267,14 +274,14 @@ class FileOperationManager(
                         }
 
                         OperationType.DELETE -> {
-                            _progress.update { current -> current.copy(currentFileName = src.name) }
+                            updateProgressForOperation(opId) { current -> current.copy(currentFileName = src.name) }
                             if (src.isDirectory) {
                                 src.deleteRecursively()
                             } else {
                                 src.delete()
                             }
                             processedFilesCount++
-                            _progress.update { current ->
+                            updateProgressForOperation(opId) { current ->
                                 current.copy(filesProcessed = processedFilesCount)
                             }
                         }
@@ -283,7 +290,7 @@ class FileOperationManager(
                     }
                 }
 
-                _progress.update {
+                updateProgressForOperation(opId) {
                     it.copy(
                         status = OperationStatus.COMPLETED,
                         filesProcessed = totalFiles,
@@ -296,7 +303,7 @@ class FileOperationManager(
                 onFilesMutated(affectedDirectories.toList())
 
             } catch (e: CancellationException) {
-                _progress.update {
+                updateProgressForOperation(opId) {
                     it.copy(
                         status = OperationStatus.CANCELLED,
                         speedBytesPerSec = 0L,
@@ -305,7 +312,7 @@ class FileOperationManager(
                 }
                 onFilesMutated(affectedDirectories.toList())
             } catch (e: Exception) {
-                _progress.update {
+                updateProgressForOperation(opId) {
                     it.copy(
                         status = OperationStatus.ERROR,
                         errorMessage = e.localizedMessage ?: "File operation failed",
