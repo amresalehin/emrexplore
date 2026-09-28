@@ -238,7 +238,11 @@ class MediaRepository(context: Context) {
     }
 
 
-    fun searchPager(query: String, filter: MediaFilter): Flow<PagingData<com.example.data.model.MediaItem>> {
+    fun searchPager(
+        query: String,
+        filter: MediaFilter,
+        favoritesOnly: Boolean = false
+    ): Flow<PagingData<com.example.data.model.MediaItem>> {
         return Pager(
             config = PagingConfig(
                 pageSize = MediaStorePagingSource.MAX_PAGE_SIZE,
@@ -248,7 +252,12 @@ class MediaRepository(context: Context) {
                 enablePlaceholders = false
             ),
             pagingSourceFactory = {
-                MediaSearchPagingSource(appContext, query, filter)
+                MediaSearchPagingSource(
+                    appContext,
+                    query,
+                    filter,
+                    favoritesOnly = favoritesOnly
+                )
             }
         ).flow
     }
