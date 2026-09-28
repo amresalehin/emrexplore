@@ -13,9 +13,11 @@ import androidx.room.RoomDatabase
         BookmarkEntity::class,
         IndexedFileEntity::class,
         ExplorerPreferencesEntity::class,
-        IndexStatusEntity::class
+        IndexStatusEntity::class,
+        MediaMetadataEntity::class,
+        PlaceSearchCacheEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,6 +28,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fileIndexDao(): FileIndexDao
     abstract fun preferencesDao(): PreferencesDao
     abstract fun indexStatusDao(): IndexStatusDao
+    abstract fun mediaMetadataDao(): MediaMetadataDao
+    abstract fun placeSearchCacheDao(): PlaceSearchCacheDao
 
     companion object {
         @Volatile
