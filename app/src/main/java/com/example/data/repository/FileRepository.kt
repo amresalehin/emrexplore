@@ -1232,6 +1232,66 @@ class FileRepository(private val context: Context) {
         ).take(100)
     }
 
+    suspend fun searchFilesInDirectory(
+        dirPath: String,
+        query: String,
+        showHidden: Boolean = false,
+        limit: Int = 150
+    ): List<FileItem> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isBlank()) return@withContext emptyList()
+
+        val normalizedDir = File(dirPath).absolutePath.removeSuffix("/")
+        val pathPrefix = if (normalizedDir.isEmpty()) "/" else "$normalizedDir/"
+        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+
+        val indexed = fileIndexDao.searchFilesInPath(pathPrefix, q, limit)
+            .asSequence()
+            .filter { showHidden || !File(it.path).name.startsWith(".") }
+            .map { entity ->
+                val file = File(entity.path)
+                FileItem(
+                    name = entity.name,
+                    path = entity.path,
+                    size = entity.size,
+                    lastModified = entity.lastModified,
+                    isDirectory = entity.isDirectory,
+                    mimeType = entity.mimeType,
+                    extension = entity.extension,
+                    isFavorite = favSet.contains(entity.path),
+                    childCount = entity.childCount,
+                    uri = Uri.fromFile(file)
+                )
+            }
+            .toList()
+
+        if (indexed.isNotEmpty()) {
+            return@withContext indexed
+        }
+
+        val liveResults = mutableListOf<FileItem>()
+        val root = File(normalizedDir.ifEmpty { "/" })
+        if (root.exists() && root.isDirectory) {
+            scanFilesForSearch(
+                dir = root,
+                query = q.lowercase(),
+                category = null,
+                outList = liveResults,
+                maxDepth = 20,
+                currentDepth = 0,
+                favSet = favSet
+            )
+        }
+
+        liveResults
+            .distinctBy { it.path }
+            .sortedWith(
+                compareByDescending<FileItem> { it.name.lowercase().startsWith(q.lowercase()) }
+                    .thenByDescending { it.lastModified }
+            )
+            .take(limit)
+    }
+
     suspend fun searchIndexedFiles(query: String, category: CategoryType? = null): List<FileItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val q = query.trim()
