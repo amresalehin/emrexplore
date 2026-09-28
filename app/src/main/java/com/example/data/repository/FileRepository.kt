@@ -997,7 +997,7 @@ class FileRepository(private val context: Context) {
         val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val queryArgs = android.os.Bundle().apply {
                 putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-                putString(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
                 putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
                 putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
                 putInt(ContentResolver.QUERY_ARG_OFFSET, 0)
