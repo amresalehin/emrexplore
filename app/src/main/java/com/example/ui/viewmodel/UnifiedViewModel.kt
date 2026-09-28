@@ -30,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -94,6 +96,8 @@ data class UiState(
     // Gallery
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
     val galleryFilter: String = "ALL", // ALL, PHOTOS, VIDEOS, FAVORITES
+    val gallerySearchQuery: String = "",
+    val gallerySearchActive: Boolean = false,
     val allMediaItems: List<MediaItem> = emptyList(),
     val mediaItems: List<MediaItem> = emptyList(),
     val mediaAlbums: List<MediaAlbum> = emptyList(),
@@ -155,21 +159,24 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private val mediaRepository = MediaRepository(application)
     private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
     private val galleryRefreshFlow = MutableStateFlow(0L)
+    private val gallerySearchFlow = MutableStateFlow("")
 
     /**
      * Primary timeline data source. Only the currently loaded Paging window is kept
      * in memory; the Gallery no longer needs the complete MediaStore library.
      */
     val galleryPagingFlow: Flow<PagingData<MediaItem>> =
-        combine(galleryFilterFlow, galleryRefreshFlow) { filter, _ -> filter }
-            .flatMapLatest { filter ->
-                if (filter == null) {
-                    mediaRepository.favoritesPager()
-                } else {
-                    mediaRepository.pager(filter)
-                }
+        combine(galleryFilterFlow, gallerySearchFlow.debounce(200).distinctUntilChanged(), galleryRefreshFlow) { filter, query, _ ->
+            filter to query.trim()
+        }.flatMapLatest { (filter, query) ->
+            if (filter == null) {
+                mediaRepository.favoritesPager()
+            } else if (query.isBlank()) {
+                mediaRepository.pager(filter)
+            } else {
+                mediaRepository.searchPager(query, filter)
             }
-            .cachedIn(viewModelScope)
+        }.cachedIn(viewModelScope)
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
@@ -804,6 +811,20 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun setGallerySubTab(subTab: GallerySubTab) {
         _uiState.update { it.copy(gallerySubTab = subTab) }
+    }
+
+    fun setGallerySearchActive(active: Boolean) {
+        _uiState.update { it.copy(gallerySearchActive = active) }
+        if (!active) setGallerySearchQuery("")
+    }
+
+    fun setGallerySearchQuery(query: String) {
+        _uiState.update { it.copy(gallerySearchQuery = query) }
+        gallerySearchFlow.value = query
+    }
+
+    fun clearGallerySearch() {
+        setGallerySearchQuery("")
     }
 
     fun setGalleryFilter(filter: String) {
