@@ -35,7 +35,7 @@ object MetadataWriter {
             }
             setIfPresent(ExifInterface.TAG_MAKE, meta.make)
             setIfPresent(ExifInterface.TAG_MODEL, meta.model)
-            setIfPresent(ExifInterface.TAG_LENS_MODEL, meta.lensModel)
+            setIfPresent("LensModel", meta.lensModel)
             setIfPresent(ExifInterface.TAG_SOFTWARE, meta.software)
             setIfPresent(ExifInterface.TAG_ARTIST, meta.artist)
             setIfPresent(ExifInterface.TAG_COPYRIGHT, meta.copyright)
@@ -52,13 +52,29 @@ object MetadataWriter {
             val lon = meta.lonDeg
             if (lat != null && lon != null && lat.isFinite() && lon.isFinite() &&
                 lat in -90.0..90.0 && lon in -180.0..180.0) {
-                exif.setLatLong(lat, lon)
-                meta.altitudeM?.takeIf { it.isFinite() }?.let { exif.setAltitude(it) }
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE, toDms(lat))
+                exif.setAttribute(ExifInterface.TAG_GPS_LATITUDE_REF, if (lat >= 0) "N" else "S")
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE, toDms(lon))
+                exif.setAttribute(ExifInterface.TAG_GPS_LONGITUDE_REF, if (lon >= 0) "E" else "W")
+                meta.altitudeM?.takeIf { it.isFinite() }?.let {
+                    exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE, "${kotlin.math.abs(it).toLong()}/1")
+                    exif.setAttribute(ExifInterface.TAG_GPS_ALTITUDE_REF, if (it >= 0) "0" else "1")
+                }
             }
             exif.saveAttributes()
             if (!temp.renameTo(file)) throw IllegalStateException("Unable to replace original metadata file")
         } finally {
             if (temp.exists()) temp.delete()
         }
+    }
+
+    private fun toDms(value: Double): String {
+        val abs = kotlin.math.abs(value)
+        val degrees = abs.toInt()
+        val minutes = ((abs - degrees) * 60.0).toInt()
+        val seconds100 = kotlin.math.round(
+            (abs - degrees - minutes / 60.0) * 3600.0 * 100.0
+        ).toLong()
+        return "${degrees}/1,${minutes}/1,${seconds100}/100"
     }
 }

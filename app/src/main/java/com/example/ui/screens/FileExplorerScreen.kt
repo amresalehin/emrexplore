@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Intent
+import java.io.File
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -107,6 +108,7 @@ import com.example.data.model.SortOption
 import com.example.data.model.ViewMode
 import com.example.ui.components.BreadcrumbsRow
 import com.example.ui.components.FileTypeIconBadge
+import com.example.ui.components.FileShareUtils
 import com.example.ui.components.PasteActionBar
 import com.example.ui.components.formatDate
 import com.example.ui.components.formatFileSize
