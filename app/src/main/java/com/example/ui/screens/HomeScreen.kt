@@ -550,6 +550,8 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
     if (showEmptyTrashConfirm) {
         AlertDialog(
             onDismissRequest = { showEmptyTrashConfirm = false },
