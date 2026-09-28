@@ -864,6 +864,11 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(selectedAlbum = album) }
     }
 
+    fun setGallerySortOption(option: GallerySortOption) {
+        _uiState.update { it.copy(gallerySortOption = option) }
+        gallerySortFlow.value = option
+    }
+
     fun setGalleryColumns(cols: Int) {
         val clamped = cols.coerceIn(2, 4)
         _uiState.update { it.copy(galleryColumns = clamped) }
