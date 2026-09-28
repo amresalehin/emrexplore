@@ -841,12 +841,19 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGallerySearchQuery(query: String) {
+        // Editing is local to the search field. Results change only after submitGallerySearch().
         _uiState.update { it.copy(gallerySearchQuery = query) }
+    }
+
+    fun submitGallerySearch() {
+        val query = _uiState.value.gallerySearchQuery.trim()
+        _uiState.update { it.copy(gallerySearchActive = query.isNotBlank()) }
         gallerySearchFlow.value = query
     }
 
     fun clearGallerySearch() {
-        setGallerySearchQuery("")
+        _uiState.update { it.copy(gallerySearchQuery = "", gallerySearchActive = false) }
+        gallerySearchFlow.value = ""
     }
 
     fun setGalleryFilter(filter: String) {
