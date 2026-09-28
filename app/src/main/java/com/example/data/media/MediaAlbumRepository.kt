@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import androidx.annotation.RequiresApi
 import com.example.data.model.MediaAlbum
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,6 +21,7 @@ class MediaAlbumRepository(context: Context) {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun queryGroupedAlbums(): List<MediaAlbum> {
         val projection = arrayOf(
             MediaStore.Files.FileColumns.BUCKET_ID,
