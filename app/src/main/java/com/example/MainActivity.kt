@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -33,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -114,6 +116,22 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
     var showAllFilesDialog by rememberSaveable {
         mutableStateOf(!isAllFilesAccessGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+    }
+
+    var mediaLocationGranted by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_MEDIA_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val mediaLocationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        mediaLocationGranted = granted
     }
 
     val allFilesLauncher = rememberLauncherForActivityResult(
@@ -265,7 +283,17 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
                         )
                         MainTab.GALLERY -> GalleryScreen(
                             uiState = uiState,
-                            viewModel = viewModel
+                            viewModel = viewModel,
+                            onRequestMediaLocationPermission = {
+                                if (
+                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                                    !mediaLocationGranted
+                                ) {
+                                    mediaLocationLauncher.launch(
+                                        Manifest.permission.ACCESS_MEDIA_LOCATION
+                                    )
+                                }
+                            }
                         )
                     }
                 }
