@@ -1,1 +1,1 @@
-Trigger Gallery search build.
+Trigger EXIF date location metadata search build.
