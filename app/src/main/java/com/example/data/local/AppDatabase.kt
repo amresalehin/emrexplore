@@ -41,7 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "fossify_files.db"
-                ).fallbackToDestructiveMigration()
+                ).fallbackToDestructiveMigrationOnDowngrade()
                  .build()
                 INSTANCE = instance
                 instance

@@ -1360,23 +1360,39 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(fileItem.path)
-                prepare()
-                start()
+                setOnPreparedListener { player ->
+                    player.start()
+                    _uiState.update {
+                        it.copy(
+                            activeAudioFile = fileItem,
+                            isAudioPlaying = true,
+                            audioDurationMs = player.duration.coerceAtLeast(0),
+                            audioPositionMs = 0
+                        )
+                    }
+                    startAudioTracking()
+                }
                 setOnCompletionListener {
                     _uiState.update { it.copy(isAudioPlaying = false, audioPositionMs = 0) }
                 }
+                setOnErrorListener { _, _, _ ->
+                    _uiState.update { it.copy(isAudioPlaying = false) }
+                    showMessage("Could not play audio")
+                    true
+                }
+                prepareAsync()
             }
-            val dur = mediaPlayer?.duration ?: 0
             _uiState.update {
                 it.copy(
                     activeAudioFile = fileItem,
-                    isAudioPlaying = true,
-                    audioDurationMs = dur,
+                    isAudioPlaying = false,
+                    audioDurationMs = 0,
                     audioPositionMs = 0
                 )
             }
-            startAudioTracking()
         } catch (e: Exception) {
+            mediaPlayer?.release()
+            mediaPlayer = null
             e.printStackTrace()
             showMessage("Could not play audio: ${e.message}")
         }

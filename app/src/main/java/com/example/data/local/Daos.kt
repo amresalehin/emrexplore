@@ -140,6 +140,9 @@ interface FileIndexDao {
     @Query("SELECT COUNT(*) FROM indexed_files WHERE parentPath = :parentPath")
     suspend fun getCountByParent(parentPath: String): Int
 
+    @Query("SELECT * FROM indexed_files WHERE path = :path LIMIT 1")
+    suspend fun getByPath(path: String): IndexedFileEntity?
+
     @Query("SELECT EXISTS(SELECT 1 FROM indexed_files WHERE path = :path)")
     suspend fun hasIndexedPath(path: String): Boolean
 
