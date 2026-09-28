@@ -12,6 +12,7 @@ import androidx.paging.PagingState
 import com.example.data.local.AppDatabase
 import com.example.data.local.MediaMetadataEntity
 import com.example.data.model.MediaItem
+import com.example.ui.viewmodel.GallerySortOption
 import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -33,7 +34,8 @@ class MediaSearchPagingSource(
     context: Context,
     private val rawQuery: String,
     private val baseFilter: MediaFilter,
-    private val favoritesOnly: Boolean = false
+    private val favoritesOnly: Boolean = false,
+    private val sort: GallerySortOption = GallerySortOption.DATE_DESC
 ) : PagingSource<Int, MediaItem>() {
 
     private val appContext = context.applicationContext
@@ -133,8 +135,7 @@ class MediaSearchPagingSource(
                 args.toTypedArray(),
                 0,
                 limit,
-                MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-                    MediaStore.Files.FileColumns._ID + " DESC"
+                sortOrder()
             )
 
             return QueryPage(
@@ -185,6 +186,15 @@ class MediaSearchPagingSource(
             )
         }
         return cursor?.use(::readCursor) ?: emptyList()
+    }
+
+    private fun sortOrder(): String = when (sort) {
+        GallerySortOption.DATE_DESC -> MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+        GallerySortOption.DATE_ASC -> MediaStore.Files.FileColumns.DATE_ADDED + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+        GallerySortOption.NAME_ASC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+        GallerySortOption.NAME_DESC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+        GallerySortOption.SIZE_DESC -> MediaStore.Files.FileColumns.SIZE + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+        GallerySortOption.SIZE_ASC -> MediaStore.Files.FileColumns.SIZE + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
     }
 
     private fun buildProviderSelection(p: ParsedMediaSearch): String {
