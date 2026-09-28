@@ -1,5 +1,6 @@
 package com.example.data.repository
 
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
