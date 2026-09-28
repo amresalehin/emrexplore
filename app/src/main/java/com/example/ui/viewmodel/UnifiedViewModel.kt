@@ -843,8 +843,16 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGallerySearchQuery(query: String) {
-        // Editing is local to the search field. Results change only after submitGallerySearch().
-        _uiState.update { it.copy(gallerySearchQuery = query) }
+        // Live search: the Paging flow is debounced and cancellable, so results update while typing.
+        val normalized = query.trim()
+        _uiState.update {
+            it.copy(
+                gallerySearchQuery = query,
+                gallerySearchSubmittedQuery = normalized,
+                gallerySearchActive = normalized.isNotBlank()
+            )
+        }
+        gallerySearchFlow.value = normalized
     }
 
     fun submitGallerySearch() {

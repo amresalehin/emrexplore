@@ -5,8 +5,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.Canvas
@@ -71,9 +69,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedButton
@@ -101,18 +96,15 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemContentType
 import androidx.paging.compose.itemKey
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import coil.request.ImageRequest
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -132,15 +124,14 @@ fun GalleryScreen(
     uiState: UiState,
     viewModel: UnifiedViewModel,
     onRequestMediaLocationPermission: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val keyboardController = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
     val selectedAlbumId = uiState.selectedAlbum?.id
     val galleryGridState = rememberLazyGridState()
     var chromeVisible by remember { mutableStateOf(true) }
-    var searchDropdownVisible by remember { mutableStateOf(false) }
     var filterMenuVisible by remember { mutableStateOf(false) }
     var sortMenuVisible by remember { mutableStateOf(false) }
     var groupMenuVisible by remember { mutableStateOf(false) }
@@ -254,7 +245,7 @@ fun GalleryScreen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             OutlinedButton(
-                                onClick = { searchDropdownVisible = !searchDropdownVisible },
+                                onClick = onOpenSearch,
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                                 modifier = Modifier.height(40.dp)
                             ) {
@@ -351,144 +342,6 @@ fun GalleryScreen(
                                     listOf("Year", "Month", "Day", "None").forEach { option ->
                                         DropdownMenuItem(text = { Text(option) }, onClick = { groupBy = option; groupMenuVisible = false })
                                     }
-                                }
-                            }
-                        }
-                        // In-place search dropdown with the full search field, recent searches, suggestions, and filters.
-                        AnimatedVisibility(
-                            visible = searchDropdownVisible,
-                            enter = fadeIn() + expandVertically(),
-                            exit = fadeOut() + shrinkVertically()
-                        ) {
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                tonalElevation = 2.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 8.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    TextField(
-                                        value = uiState.gallerySearchQuery,
-                                        onValueChange = {
-                                            viewModel.setGallerySearchQuery(it)
-                                            searchDropdownVisible = true
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .onFocusChanged { state -> if (state.isFocused) searchDropdownVisible = true },
-                                        singleLine = true,
-                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                        keyboardActions = KeyboardActions(
-                                            onSearch = {
-                                                viewModel.submitGallerySearch()
-                                                searchDropdownVisible = false
-                                                keyboardController?.hide()
-                                            }
-                                        ),
-                                        placeholder = { Text(if (uiState.gallerySubTab == GallerySubTab.ALBUMS) "Search albums" else "Search photos & videos") },
-                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (uiState.gallerySearchQuery.isNotBlank()) {
-                                                IconButton(onClick = viewModel::clearGallerySearch) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Clear search")
-                                                }
-                                            }
-                                        },
-                                        colors = TextFieldDefaults.colors(
-                                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                            unfocusedContainerColor = MaterialTheme.colorScheme.surface
-                                        )
-                                    )
-                                    if (uiState.galleryRecentSearches.isNotEmpty()) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                "Recent searches",
-                                                style = MaterialTheme.typography.labelLarge,
-                                                fontWeight = FontWeight.SemiBold,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            TextButton(onClick = viewModel::clearGalleryRecentSearches) {
-                                                Text("Clear")
-                                            }
-                                        }
-
-                                        Column(
-                                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                                        ) {
-                                            uiState.galleryRecentSearches.take(5).forEach { recent ->
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        Text(
-                                                            recent,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    },
-                                                    onClick = {
-                                                        viewModel.useRecentGallerySearch(recent)
-                                                        searchDropdownVisible = false
-                                                        keyboardController?.hide()
-                                                    },
-                                                    leadingIcon = {
-                                                        Icon(Icons.Default.Search, contentDescription = null)
-                                                    }
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Text(
-                                        "Suggestions",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        listOf(
-                                            "year:" + yearToken(),
-                                            "month:" + monthToken(),
-                                            "gps:true",
-                                            "near:"
-                                        ).forEach { suggestion ->
-                                            FilterChip(
-                                                selected = hasExactSearchToken(uiState.gallerySearchQuery, suggestion),
-                                                onClick = {
-                                                    viewModel.setGallerySearchQuery(
-                                                        toggleExactSearchToken(uiState.gallerySearchQuery, suggestion)
-                                                    )
-                                                },
-                                                label = { Text(suggestion) }
-                                            )
-                                        }
-                                    }
-
-                                    Text(
-                                        "Filters",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    SearchQuickFilterRow(
-                                        uiState = uiState,
-                                        viewModel = viewModel
-                                    )
-
-                                    Text(
-                                        "Press Search to apply",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
                                 }
                             }
                         }
