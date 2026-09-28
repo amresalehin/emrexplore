@@ -259,7 +259,7 @@ private object MediaSearchParser {
     }
 
     private fun parseDate(value: String): Long? = runCatching {
-        java.time.LocalDate.parse(value).atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+        java.time.LocalDate.parse(value).atStartOfDay().toEpochSecond(ZoneOffset.UTC) * 1000L
     }.getOrNull()
 
     private fun parseYear(value: String): Pair<Long, Long>? = runCatching {
