@@ -188,7 +188,7 @@ fun GalleryScreen(
                             modifier = Modifier.weight(1f)
                         )
 
-                        if (uiState.gallerySubTab == GallerySubTab.TIMELINE && uiState.galleryFilter != "FAVORITES") {
+                        if (uiState.gallerySubTab == GallerySubTab.TIMELINE) {
                             IconButton(onClick = { viewModel.setGallerySearchActive(true) }) {
                                 Icon(Icons.Default.Search, contentDescription = "Search gallery")
                             }
