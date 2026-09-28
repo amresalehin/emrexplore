@@ -95,6 +95,9 @@ interface FileIndexDao {
     @Query("SELECT * FROM indexed_files WHERE name LIKE '%' || :query || '%' ORDER BY isDirectory DESC, name ASC LIMIT :limit")
     suspend fun searchFiles(query: String, limit: Int = 100): List<IndexedFileEntity>
 
+    @Query("SELECT * FROM indexed_files WHERE path LIKE :pathPrefix || '%' AND name LIKE '%' || :query || '%' ORDER BY isDirectory DESC, name ASC LIMIT :limit")
+    suspend fun searchFilesInPath(pathPrefix: String, query: String, limit: Int = 150): List<IndexedFileEntity>
+
     @Query("SELECT * FROM indexed_files WHERE category = :category AND name LIKE '%' || :query || '%' ORDER BY isDirectory DESC, name ASC LIMIT :limit")
     suspend fun searchFilesByCategory(query: String, category: String, limit: Int = 100): List<IndexedFileEntity>
 
