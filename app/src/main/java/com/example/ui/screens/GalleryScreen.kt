@@ -150,9 +150,11 @@ fun GalleryScreen(
                 mediaData
             } else {
                 mediaData.insertSeparators { before, after ->
-                    val current = after?.item ?: return@insertSeparators null
-                    val currentKey = galleryGroupKey(current.dateAdded, groupBy)
-                    val previousKey = before?.item?.let { galleryGroupKey(it.dateAdded, groupBy) }
+                    val current = after as? GalleryGridItem.Media ?: return@insertSeparators null
+                    val currentKey = galleryGroupKey(current.item.dateAdded, groupBy)
+                    val previousKey = (before as? GalleryGridItem.Media)?.let {
+                        galleryGroupKey(it.item.dateAdded, groupBy)
+                    }
                     if (currentKey != previousKey) GalleryGridItem.Header(currentKey) else null
                 }
             }
@@ -654,6 +656,27 @@ private fun PagedMediaGrid(
         EmptyGalleryMessage("Could not load media. Pull to refresh.")
     }
 }
+
+private fun removeSearchOperators(query: String, vararg keys: String): String {
+    if (query.isBlank()) return ""
+    val pattern = keys.joinToString("|") { Regex.escape(it) }
+    return query
+        .replace(
+            Regex("""(?i)(^|\\s)(?:$pattern):(?:"[^"]*"|\\S+)"""),
+            " "
+        )
+        .replace(Regex("""\\s+"""), " ")
+        .trim()
+}
+
+private fun replaceSearchOperators(
+    query: String,
+    keys: Set<String>,
+    replacement: String
+): String =
+    (removeSearchOperators(query, *keys.toTypedArray()) + " " + replacement)
+        .trim()
+        .replace(Regex("""\\s+"""), " ")
 
 private fun todayToken(): String =
     java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
