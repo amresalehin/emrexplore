@@ -834,15 +834,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGalleryFilter(filter: String) {
-        if (filter == "FAVORITES") {
-            _uiState.update {
-                it.copy(
-                    gallerySearchActive = false,
-                    gallerySearchQuery = ""
-                )
-            }
-            gallerySearchFlow.value = ""
-        }
         _uiState.update { it.copy(galleryFilter = filter) }
 
         when (filter) {
