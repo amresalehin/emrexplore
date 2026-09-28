@@ -264,7 +264,7 @@ class MediaSearchPagingSource(
                     if (!actual.isFinite() || abs(actual - requested) > 0.2) return false
                 }
 
-                val gpsOutput = DoubleArray(2)
+                val gpsOutput = FloatArray(2)
                 val hasGps = exif.getLatLong(gpsOutput)
 
                 when (parsed.hasGps) {
@@ -276,8 +276,8 @@ class MediaSearchPagingSource(
                 parsed.near?.let { near ->
                     if (!hasGps) return false
                     if (distanceKm(
-                            gpsOutput[0],
-                            gpsOutput[1],
+                            gpsOutput[0].toDouble(),
+                            gpsOutput[1].toDouble(),
                             near.lat,
                             near.lon
                         ) > near.radiusKm
