@@ -297,10 +297,10 @@ The performance architecture is considered ready only when:
 6. Optimize thumbnail/cache behavior under rapid scrolling.
 7. Establish 10k/50k/100k real-device benchmarks.
 8. Optimize startup/background indexing.
-9. Audit search scalability.
+9. Implement Gallery search foundation and benchmark search scalability.
 10. Complete memory/I/O stress testing.
 
-Last updated: 2026-09-27
+Last updated: 2026-09-28
 
 Fullscreen implementation note: repository support now loads a 5-item window around an absolute position from the same timeline/favorites/album PagingSources; UI/ViewModel wiring remains the next step.
 
@@ -358,7 +358,12 @@ The Gallery is now a media manager, not merely a thumbnail grid. The target is A
 - [ ] Metadata-aware sorting/filtering
 
 ### Search and organization
-- [ ] Gallery search by filename
+- [x] Gallery search by filename (provider-side Paging)
+- [x] Gallery search across filename, folder/album and path
+- [x] Gallery search operators: type:, album:/folder:, name:, after:, before:, year:
+- [x] Debounced and cancellable search query flow
+- [ ] Gallery metadata/EXIF search
+- [ ] Semantic/AI search
 - [ ] Date/year/month filtering
 - [ ] Location filtering
 - [ ] Metadata/tag filtering
