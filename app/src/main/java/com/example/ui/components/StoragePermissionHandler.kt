@@ -58,12 +58,10 @@ fun getRequiredStoragePermissions(): List<String> {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> listOf(
             Manifest.permission.READ_MEDIA_IMAGES,
             Manifest.permission.READ_MEDIA_VIDEO,
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.ACCESS_MEDIA_LOCATION
+            Manifest.permission.READ_MEDIA_AUDIO
         )
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> listOf(
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.ACCESS_MEDIA_LOCATION
+            Manifest.permission.READ_EXTERNAL_STORAGE
         )
         else -> listOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
