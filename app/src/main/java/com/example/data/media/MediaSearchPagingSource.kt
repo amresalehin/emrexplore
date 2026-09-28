@@ -12,9 +12,9 @@ import androidx.paging.PagingSource
 import androidx.paging.PagingState
 import com.example.data.model.MediaItem
 import kotlinx.coroutines.CancellationException
-import java.time.LocalDate
-import java.time.YearMonth
-import java.time.ZoneId
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.asin
 import kotlin.math.cos
@@ -582,37 +582,50 @@ private object MediaSearchParser {
     }
 
     private fun parseDate(value: String): Long? = runCatching {
-        LocalDate.parse(value)
-            .atStartOfDay(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            isLenient = false
+            timeZone = java.util.TimeZone.getDefault()
+        }.parse(value)?.time
     }.getOrNull()
 
     private fun parseYear(value: String): Pair<Long, Long>? = runCatching {
         val year = value.toInt()
-        val zone = ZoneId.systemDefault()
-        val start = LocalDate.of(year, 1, 1)
-            .atStartOfDay(zone)
-            .toInstant()
-            .toEpochMilli()
-        val end = LocalDate.of(year + 1, 1, 1)
-            .atStartOfDay(zone)
-            .toInstant()
-            .toEpochMilli()
+        if (year !in 1..9999) return null
+        val zone = java.util.TimeZone.getDefault()
+        val start = Calendar.getInstance(zone, Locale.US).apply {
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, Calendar.JANUARY)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+        val end = Calendar.getInstance(zone, Locale.US).apply {
+            clear()
+            set(Calendar.YEAR, year + 1)
+            set(Calendar.MONTH, Calendar.JANUARY)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
         start to end
     }.getOrNull()
 
     private fun parseMonth(value: String): Pair<Long, Long>? = runCatching {
-        val month = YearMonth.parse(value)
-        val zone = ZoneId.systemDefault()
-        val start = month.atDay(1)
-            .atStartOfDay(zone)
-            .toInstant()
-            .toEpochMilli()
-        val end = month.plusMonths(1).atDay(1)
-            .atStartOfDay(zone)
-            .toInstant()
-            .toEpochMilli()
+        val parts = value.split("-")
+        if (parts.size != 2) return null
+        val year = parts[0].toInt()
+        val month = parts[1].toInt()
+        if (year !in 1..9999 || month !in 1..12) return null
+        val zone = java.util.TimeZone.getDefault()
+        val start = Calendar.getInstance(zone, Locale.US).apply {
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month - 1)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+        val end = Calendar.getInstance(zone, Locale.US).apply {
+            clear()
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
         start to end
     }.getOrNull()
 
