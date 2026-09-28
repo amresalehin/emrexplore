@@ -164,6 +164,44 @@ private data class ParsedMediaSearch(
 
 private data class Near(val lat: Double, val lon: Double, val radiusKm: Double)
 
+
+    private fun matchesExif(item: MediaItem): Boolean {
+        if (item.isVideo) return parsed.near == null && parsed.hasGps != true && parsed.exifTerms.isEmpty()
+        return try {
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && (parsed.hasGps == true || parsed.near != null)) MediaStore.setRequireOriginal(item.uri) else item.uri
+            resolver.openInputStream(uri)?.use { stream ->
+                val exif = ExifInterface(stream)
+                val searchable = listOf(
+                    ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, "LensModel",
+                    "LensMake", ExifInterface.TAG_ARTIST, ExifInterface.TAG_COPYRIGHT,
+                    ExifInterface.TAG_IMAGE_DESCRIPTION, ExifInterface.TAG_USER_COMMENT,
+                    ExifInterface.TAG_SOFTWARE, ExifInterface.TAG_DATETIME_ORIGINAL
+                ).joinToString(" ") { exif.getAttribute(it).orEmpty() }.lowercase()
+                if (parsed.exifTerms.any { !searchable.contains(it.lowercase()) }) return false
+                parsed.make?.let { if (!exif.getAttribute(ExifInterface.TAG_MAKE).orEmpty().contains(it, true)) return false }
+                parsed.model?.let { if (!exif.getAttribute(ExifInterface.TAG_MODEL).orEmpty().contains(it, true)) return false }
+                parsed.lens?.let {
+                    val lens = exif.getAttribute(ExifInterface.TAG_LENS_MODEL).orEmpty() + " " + exif.getAttribute(ExifInterface.TAG_LENS_MAKE).orEmpty()
+                    if (!lens.contains(it, true)) return false
+                }
+                parsed.iso?.let { if (exif.getAttributeInt(ExifInterface.TAG_ISO_SPEED_RATINGS, -1) != it) return false }
+                parsed.focalLength?.let { if (abs(exif.getAttributeDouble(ExifInterface.TAG_FOCAL_LENGTH, -1.0) - it) > 0.2) return false }
+                parsed.aperture?.let { if (abs(exif.getAttributeDouble(ExifInterface.TAG_F_NUMBER, -1.0) - it) > 0.2) return false }
+                val gps = exif.latLong
+                if (parsed.hasGps == true && gps == null) return false
+                parsed.near?.let { if (gps == null || distanceKm(gps[0], gps[1], it.lat, it.lon) > it.radiusKm) return false }
+                true
+            } ?: false
+        } catch (_: SecurityException) { false } catch (_: Exception) { false }
+    }
+
+    private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        return 6371.0 * 2.0 * asin(sqrt(a))
+    }
+
 private object MediaSearchParser {
     private const val ESCAPE = "\\"
 
@@ -284,40 +322,4 @@ private object MediaSearchParser {
         value.replace(ESCAPE, ESCAPE + ESCAPE).replace("%", ESCAPE + "%").replace("_", ESCAPE + "_")
 }
 
-    private fun matchesExif(item: MediaItem): Boolean {
-        if (item.isVideo) return parsed.near == null && parsed.hasGps != true && parsed.exifTerms.isEmpty()
-        return try {
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && (parsed.hasGps == true || parsed.near != null)) MediaStore.setRequireOriginal(item.uri) else item.uri
-            resolver.openInputStream(uri)?.use { stream ->
-                val exif = ExifInterface(stream)
-                val searchable = listOf(
-                    ExifInterface.TAG_MAKE, ExifInterface.TAG_MODEL, ExifInterface.TAG_LENS_MODEL,
-                    ExifInterface.TAG_LENS_MAKE, ExifInterface.TAG_ARTIST, ExifInterface.TAG_COPYRIGHT,
-                    ExifInterface.TAG_IMAGE_DESCRIPTION, ExifInterface.TAG_USER_COMMENT,
-                    ExifInterface.TAG_SOFTWARE, ExifInterface.TAG_DATETIME_ORIGINAL
-                ).joinToString(" ") { exif.getAttribute(it).orEmpty() }.lowercase()
-                if (parsed.exifTerms.any { !searchable.contains(it.lowercase()) }) return false
-                parsed.make?.let { if (!exif.getAttribute(ExifInterface.TAG_MAKE).orEmpty().contains(it, true)) return false }
-                parsed.model?.let { if (!exif.getAttribute(ExifInterface.TAG_MODEL).orEmpty().contains(it, true)) return false }
-                parsed.lens?.let {
-                    val lens = exif.getAttribute(ExifInterface.TAG_LENS_MODEL).orEmpty() + " " + exif.getAttribute(ExifInterface.TAG_LENS_MAKE).orEmpty()
-                    if (!lens.contains(it, true)) return false
-                }
-                parsed.iso?.let { if (exif.getAttributeInt(ExifInterface.TAG_ISO_SPEED_RATINGS, -1) != it) return false }
-                parsed.focalLength?.let { if (abs(exif.getAttributeDouble(ExifInterface.TAG_FOCAL_LENGTH, -1.0) - it) > 0.2) return false }
-                parsed.aperture?.let { if (abs(exif.getAttributeDouble(ExifInterface.TAG_F_NUMBER, -1.0) - it) > 0.2) return false }
-                val gps = exif.latLong
-                if (parsed.hasGps == true && gps == null) return false
-                parsed.near?.let { if (gps == null || distanceKm(gps[0], gps[1], it.lat, it.lon) > it.radiusKm) return false }
-                true
-            } ?: false
-        } catch (_: SecurityException) { false } catch (_: Exception) { false }
-    }
-
-    private fun distanceKm(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val dLat = Math.toRadians(lat2 - lat1)
-        val dLon = Math.toRadians(lon2 - lon1)
-        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
-        return 6371.0 * 2.0 * asin(sqrt(a))
-    }
 }
