@@ -639,6 +639,13 @@ private fun GalleryScrollbar(
                 }
             }
     ) {
+        val trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+            alpha = 0.16f
+        )
+        val thumbColor = MaterialTheme.colorScheme.primary.copy(
+            alpha = 0.62f
+        )
+
         Canvas(modifier = Modifier.fillMaxSize()) {
             val trackWidth = 3.dp.toPx()
             val thumbWidth = 5.dp.toPx()
@@ -647,13 +654,13 @@ private fun GalleryScrollbar(
             val thumbHeight = (size.height * thumbFraction).coerceAtLeast(24.dp.toPx())
             val thumbTop = (size.height - thumbHeight).coerceAtLeast(0f) * progress
             drawRoundRect(
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f),
+                color = trackColor,
                 topLeft = androidx.compose.ui.geometry.Offset(trackX, 0f),
                 size = androidx.compose.ui.geometry.Size(trackWidth, size.height),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackWidth, trackWidth)
             )
             drawRoundRect(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
+                color = thumbColor,
                 topLeft = androidx.compose.ui.geometry.Offset(thumbX, thumbTop),
                 size = androidx.compose.ui.geometry.Size(thumbWidth, thumbHeight),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(thumbWidth, thumbWidth)
