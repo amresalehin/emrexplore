@@ -352,6 +352,7 @@ fun GalleryScreen(
             } else {
                 PagedMediaGrid(
                     items = albumItems,
+                    gridState = galleryGridState,
                     columns = uiState.galleryColumns,
                     onItemClick = { item ->
                         if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
@@ -369,6 +370,7 @@ fun GalleryScreen(
                 GallerySubTab.TIMELINE -> {
                     PagedMediaGrid(
                         items = pagedMedia,
+                        gridState = galleryGridState,
                         columns = uiState.galleryColumns,
                         onItemClick = { item ->
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
@@ -412,6 +414,7 @@ fun GalleryScreen(
 @Composable
 private fun PagedMediaGrid(
     items: androidx.paging.compose.LazyPagingItems<MediaItem>,
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
     columns: Int,
     onItemClick: (MediaItem) -> Unit,
     onItemLongClick: (MediaItem) -> Unit = {},
@@ -603,6 +606,62 @@ private fun monthToken(): String =
 
 private fun yearToken(): String =
     java.text.SimpleDateFormat("yyyy", Locale.US).format(java.util.Date())
+
+@Composable
+private fun GalleryScrollbar(
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    columns: Int,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    val layout = gridState.layoutInfo
+    val total = layout.totalItemsCount
+    val visible = layout.visibleItemsInfo.size
+    if (total <= visible || total <= 0) return
+
+    val maxFirst = (total - visible).coerceAtLeast(1)
+    val progress = (gridState.firstVisibleItemIndex.toFloat() / maxFirst).coerceIn(0f, 1f)
+    val thumbFraction = (visible.toFloat() / total).coerceIn(0.08f, 1f)
+
+    Box(
+        modifier = modifier
+            .width(14.dp)
+            .fillMaxHeight()
+            .pointerInput(total, columns) {
+                detectVerticalDragGestures { change, dragAmount ->
+                    change.consume()
+                    scope.launch {
+                        val viewport = gridState.layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f)
+                        val itemRange = (total - visible).coerceAtLeast(1)
+                        val deltaItems = (dragAmount / viewport * itemRange).roundToInt()
+                        val target = (gridState.firstVisibleItemIndex + deltaItems).coerceIn(0, maxFirst)
+                        gridState.scrollToItem(target)
+                    }
+                }
+            }
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val trackWidth = 3.dp.toPx()
+            val thumbWidth = 5.dp.toPx()
+            val trackX = (size.width - trackWidth) / 2f
+            val thumbX = (size.width - thumbWidth) / 2f
+            val thumbHeight = (size.height * thumbFraction).coerceAtLeast(24.dp.toPx())
+            val thumbTop = (size.height - thumbHeight).coerceAtLeast(0f) * progress
+            drawRoundRect(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f),
+                topLeft = androidx.compose.ui.geometry.Offset(trackX, 0f),
+                size = androidx.compose.ui.geometry.Size(trackWidth, size.height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackWidth, trackWidth)
+            )
+            drawRoundRect(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.62f),
+                topLeft = androidx.compose.ui.geometry.Offset(thumbX, thumbTop),
+                size = androidx.compose.ui.geometry.Size(thumbWidth, thumbHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(thumbWidth, thumbWidth)
+            )
+        }
+    }
+}
 
 @Composable
 private fun MediaGrid(
