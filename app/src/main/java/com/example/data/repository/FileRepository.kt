@@ -971,13 +971,9 @@ class FileRepository(private val context: Context) {
     }
 
     private fun fastChildCount(dir: File): Int {
-        val name = dir.name
-        if (name.equals("Android", ignoreCase = true) || name.equals("data", ignoreCase = true) || name.equals("obb", ignoreCase = true)) {
-            return 0
-        }
         return try {
             dir.list()?.size ?: 0
-        } catch (e: Exception) {
+        } catch (e: SecurityException) {
             0
         }
     }

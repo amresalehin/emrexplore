@@ -120,7 +120,7 @@ class MediaSearchPagingSource(
         val baseSelection = buildProviderSelection(p)
         val baseArgs = buildProviderArgs(p)
 
-        if (favoritesOnly) {
+        if (favoritesOnly || p.favoritesOnly) {
             val paths = favoriteDao.getFavoritePathsPage(limit, offset)
             if (paths.isEmpty()) return QueryPage(emptyList(), 0, true)
 
@@ -385,6 +385,7 @@ private data class ParsedMediaSearch(
     val focalLength: Double? = null,
     val aperture: Double? = null,
     val hasGps: Boolean? = null,
+    val favoritesOnly: Boolean = false,
     val near: Near? = null,
     val exifTerms: List<String> = emptyList(),
     val locationText: String? = null,
@@ -425,6 +426,7 @@ private object MediaSearchParser {
         var focalLength: Double? = null
         var aperture: Double? = null
         var hasGps: Boolean? = null
+        var favoritesOnly = false
         var near: Near? = null
         var locationText: String? = null
 
@@ -475,7 +477,12 @@ private object MediaSearchParser {
 
                 "gps" -> when (value.lowercase(Locale.US)) {
                     "yes", "true", "1" -> hasGps = true
-                    "no", "false", "0" -> hasGps = false
+                    "no", "false", "0" -> nameTerms += raw
+                }
+
+                "favorite", "favorites" -> when (value.lowercase(Locale.US)) {
+                    "yes", "true", "1" -> favoritesOnly = true
+                    "no", "false", "0" -> favoritesOnly = false
                     else -> nameTerms += raw
                 }
 
@@ -527,6 +534,7 @@ private object MediaSearchParser {
             focalLength = focalLength,
             aperture = aperture,
             hasGps = hasGps,
+            favoritesOnly = favoritesOnly,
             near = near,
             exifTerms = exifTerms,
             locationText = locationText
