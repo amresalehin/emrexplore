@@ -449,3 +449,12 @@ Last updated: 2026-09-27
 - [ ] Preserve breadcrumbs and selection mode as separate navigation/action surfaces.
 - [ ] Keep File Explorer page loading and folder/stat caches; do not introduce a whole-storage pre-index just for header controls.
 - [ ] Add the equivalent scroll-reactive header collapse after the Gallery version is device-validated.
+
+
+## 2026-09-28 — Dedicated Gallery Search Page
+- [x] Move Gallery search out of the Gallery header into a dedicated full-screen search page.
+- [x] Follow Aves-style search layout: back button, single-line search field, clear action, horizontal chips, section headers, recent searches, albums, formats, and collection filters.
+- [x] Make Gallery search provider/Paging results update dynamically while the user types (debounced/cancellable).
+- [x] Show live matching media thumbnails on the search page without materializing the full media library.
+- [x] Preserve bounded Paging architecture for search results.
+- [ ] Add first-class Places/Countries and persistent tag indexing when corresponding metadata indexes are available.
