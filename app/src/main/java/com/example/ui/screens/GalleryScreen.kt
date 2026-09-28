@@ -88,10 +88,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.Locale
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.paging.LoadState
+import androidx.paging.PagingData
 import androidx.paging.insertSeparators
 import androidx.paging.map
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -143,9 +146,9 @@ fun GalleryScreen(
     var groupMenuVisible by remember { mutableStateOf(false) }
     var groupBy by remember { mutableStateOf("Month") }
 
-    val groupedPagingFlow = remember(groupBy) {
-        viewModel.galleryPagingFlow.map { pagingData ->
-            val mediaData = pagingData.map { GalleryGridItem.Media(it) }
+    val groupedPagingFlow: Flow<PagingData<GalleryGridItem>> = remember(groupBy) {
+        viewModel.galleryPagingFlow.map { pagingData: PagingData<MediaItem> ->
+            val mediaData: PagingData<GalleryGridItem> = pagingData.map { media -> GalleryGridItem.Media(media) }
             if (groupBy == "None") {
                 mediaData
             } else {
@@ -195,8 +198,8 @@ fun GalleryScreen(
 
     val albumPagedMedia = if (selectedAlbumId != null) {
         val albumFlow = remember(selectedAlbumId) {
-            MediaRepository(context).albumPager(selectedAlbumId).map { pagingData ->
-                pagingData.map { GalleryGridItem.Media(it) }
+            MediaRepository(context).albumPager(selectedAlbumId).map { pagingData: PagingData<MediaItem> ->
+                pagingData.map { media -> GalleryGridItem.Media(media) }
             }
         }
         albumFlow.collectAsLazyPagingItems()
