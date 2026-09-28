@@ -108,6 +108,7 @@ data class UiState(
     val gallerySearchQuery: String = "",
     val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
+    val galleryRecentSearches: List<String> = emptyList(),
     val allMediaItems: List<MediaItem> = emptyList(),
     val mediaItems: List<MediaItem> = emptyList(),
     val mediaAlbums: List<MediaAlbum> = emptyList(),
@@ -848,13 +849,28 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun submitGallerySearch() {
         val query = _uiState.value.gallerySearchQuery.trim()
+        val recents = if (query.isBlank()) {
+            _uiState.value.galleryRecentSearches
+        } else {
+            listOf(query) + _uiState.value.galleryRecentSearches.filterNot { it.equals(query, ignoreCase = true) }
+        }.take(8)
         _uiState.update {
             it.copy(
                 gallerySearchSubmittedQuery = query,
-                gallerySearchActive = query.isNotBlank()
+                gallerySearchActive = query.isNotBlank(),
+                galleryRecentSearches = recents
             )
         }
         gallerySearchFlow.value = query
+    }
+
+    fun useRecentGallerySearch(query: String) {
+        _uiState.update { it.copy(gallerySearchQuery = query) }
+        submitGallerySearch()
+    }
+
+    fun clearGalleryRecentSearches() {
+        _uiState.update { it.copy(galleryRecentSearches = emptyList()) }
     }
 
     fun clearGallerySearch() {
