@@ -118,6 +118,8 @@ data class UiState(
     val fullscreenTotalCount: Int = 0,
     val fullscreenSource: FullscreenMediaSource? = null,
     val fullscreenAlbumId: String? = null,
+    val fullscreenSearchQuery: String = "",
+    val fullscreenSearchFavoriteOnly: Boolean = false,
     val fullscreenLoading: Boolean = false,
     val activeTextFile: FileItem? = null,
     val textFileContent: String = "",
@@ -169,12 +171,16 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         combine(galleryFilterFlow, gallerySearchFlow.debounce(200).distinctUntilChanged(), galleryRefreshFlow) { filter, query, _ ->
             filter to query.trim()
         }.flatMapLatest { (filter, query) ->
-            if (filter == null) {
+            if (filter == null && query.isBlank()) {
                 mediaRepository.favoritesPager()
             } else if (query.isBlank()) {
                 mediaRepository.pager(filter)
             } else {
-                mediaRepository.searchPager(query, filter)
+                mediaRepository.searchPager(
+                    query,
+                    filter ?: MediaFilter.ALL,
+                    favoritesOnly = filter == null
+                )
             }
         }.cachedIn(viewModelScope)
     private val _uiState = MutableStateFlow(UiState())
@@ -828,6 +834,15 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun setGalleryFilter(filter: String) {
+        if (filter == "FAVORITES") {
+            _uiState.update {
+                it.copy(
+                    gallerySearchActive = false,
+                    gallerySearchQuery = ""
+                )
+            }
+            gallerySearchFlow.value = ""
+        }
         _uiState.update { it.copy(galleryFilter = filter) }
 
         when (filter) {
@@ -899,7 +914,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         source: FullscreenMediaSource? = null,
         albumId: String? = null
     ) {
+        val stateBeforeOpen = _uiState.value
         val fallbackIndex = list.indexOfFirst { it.path == item.path }.takeIf { it >= 0 } ?: 0
+        val searchFavoriteOnly = stateBeforeOpen.galleryFilter == "FAVORITES"
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = fallbackIndex,
@@ -908,6 +925,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 fullscreenTotalCount = list.size,
                 fullscreenSource = source,
                 fullscreenAlbumId = albumId,
+                fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchQuery else "",
+                fullscreenSearchFavoriteOnly = if (source == FullscreenMediaSource.SEARCH) searchFavoriteOnly else false,
                 fullscreenLoading = source != null
             )
         }
@@ -915,8 +934,38 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         fullscreenLoadJob?.cancel()
         fullscreenLoadJob = viewModelScope.launch {
             try {
+                if (source == FullscreenMediaSource.SEARCH) {
+                    val filter = when (stateBeforeOpen.galleryFilter) {
+                        "PHOTOS" -> MediaFilter.PHOTOS
+                        "VIDEOS" -> MediaFilter.VIDEOS
+                        else -> MediaFilter.ALL
+                    }
+                    val window = mediaRepository.loadSearchViewerWindow(
+                        item = item,
+                        query = stateBeforeOpen.gallerySearchQuery,
+                        filter = filter,
+                        favoritesOnly = searchFavoriteOnly,
+                        radius = 2
+                    )
+                    _uiState.update {
+                        it.copy(
+                            fullscreenMediaIndex = window.startIndex,
+                            fullscreenMediaList = window.items,
+                            fullscreenWindowStartIndex = window.startIndex,
+                            fullscreenTotalCount = window.totalCount,
+                            fullscreenLoading = false
+                        )
+                    }
+                    return@launch
+                }
+
                 val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId)
-                val window = mediaRepository.loadViewerWindow(source, absoluteIndex, radius = 2, albumId = albumId)
+                val window = mediaRepository.loadViewerWindow(
+                    source,
+                    absoluteIndex,
+                    radius = 2,
+                    albumId = albumId
+                )
                 _uiState.update {
                     it.copy(
                         fullscreenMediaIndex = absoluteIndex,
@@ -943,6 +992,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 fullscreenTotalCount = 1,
                 fullscreenSource = null,
                 fullscreenAlbumId = null,
+                fullscreenSearchQuery = "",
+                fullscreenSearchFavoriteOnly = false,
                 fullscreenLoading = false
             )
         }
@@ -977,7 +1028,46 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         fullscreenLoadJob = viewModelScope.launch {
             _uiState.update { it.copy(fullscreenLoading = true) }
             try {
-                val window = mediaRepository.loadViewerWindow(source, targetIndex, radius = 2, albumId = state.fullscreenAlbumId)
+                if (source == FullscreenMediaSource.SEARCH) {
+                    val filter = when (state.galleryFilter) {
+                        "PHOTOS" -> MediaFilter.PHOTOS
+                        "VIDEOS" -> MediaFilter.VIDEOS
+                        else -> MediaFilter.ALL
+                    }
+                    val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
+                        state.fullscreenMediaList.firstOrNull()
+                    } else {
+                        state.fullscreenMediaList.lastOrNull()
+                    } ?: run {
+                        _uiState.update { it.copy(fullscreenLoading = false) }
+                        return@launch
+                    }
+
+                    val window = mediaRepository.loadSearchViewerWindow(
+                        item = anchor,
+                        query = state.fullscreenSearchQuery,
+                        filter = filter,
+                        favoritesOnly = state.fullscreenSearchFavoriteOnly,
+                        radius = 2
+                    )
+                    _uiState.update {
+                        it.copy(
+                            fullscreenMediaList = window.items,
+                            fullscreenWindowStartIndex = window.startIndex,
+                            fullscreenTotalCount = window.totalCount,
+                            fullscreenMediaIndex = targetIndex,
+                            fullscreenLoading = false
+                        )
+                    }
+                    return@launch
+                }
+
+                val window = mediaRepository.loadViewerWindow(
+                    source,
+                    targetIndex,
+                    radius = 2,
+                    albumId = state.fullscreenAlbumId
+                )
                 _uiState.update {
                     it.copy(
                         fullscreenMediaList = window.items,
