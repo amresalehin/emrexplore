@@ -145,7 +145,7 @@ fun GalleryScreen(
                             onValueChange = viewModel::setGallerySearchQuery,
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            placeholder = { Text("Search photos, videos, folders…") },
+                            placeholder = { Text("Try year:2025 camera:Canon gps:true near:22.57,88.36,10") },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             trailingIcon = {
                                 IconButton(onClick = viewModel::clearGallerySearch) {
@@ -225,7 +225,7 @@ fun GalleryScreen(
                     }
 
                     // Filter Chips row (for Timeline)
-                    if (uiState.gallerySubTab == GallerySubTab.TIMELINE) {
+                    if (uiState.gallerySubTab == GallerySubTab.TIMELINE && !uiState.gallerySearchActive) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
