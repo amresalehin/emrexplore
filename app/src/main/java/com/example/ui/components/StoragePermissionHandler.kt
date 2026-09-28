@@ -61,8 +61,9 @@ fun getRequiredStoragePermissions(): List<String> {
             Manifest.permission.READ_MEDIA_AUDIO,
             Manifest.permission.ACCESS_MEDIA_LOCATION
         )
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> listOf(
-            Manifest.permission.READ_EXTERNAL_STORAGE
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> listOf(
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+            Manifest.permission.ACCESS_MEDIA_LOCATION
         )
         else -> listOf(
             Manifest.permission.READ_EXTERNAL_STORAGE,
