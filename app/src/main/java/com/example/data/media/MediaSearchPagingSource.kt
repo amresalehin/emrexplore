@@ -135,8 +135,10 @@ class MediaSearchPagingSource(
                 args.toTypedArray(),
                 0,
                 limit,
-                sortOrder()
-            )
+                MediaStore.Files.FileColumns._ID + " ASC"
+            ).sortedBy { row ->
+                paths.indexOf(row.path).let { if (it < 0) Int.MAX_VALUE else it }
+            }
 
             return QueryPage(
                 rows = rows,
@@ -151,8 +153,7 @@ class MediaSearchPagingSource(
             baseArgs.toTypedArray(),
             offset,
             limit,
-            MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-                MediaStore.Files.FileColumns._ID + " DESC"
+            sortOrder()
         )
 
         return QueryPage(rows, rows.size, rows.size < limit)
