@@ -56,6 +56,15 @@ enum class GallerySubTab {
     ALBUMS
 }
 
+enum class GallerySortOption(val title: String) {
+    DATE_DESC("Newest first"),
+    DATE_ASC("Oldest first"),
+    NAME_ASC("Name A–Z"),
+    NAME_DESC("Name Z–A"),
+    SIZE_DESC("Largest first"),
+    SIZE_ASC("Smallest first")
+}
+
 enum class ClipboardAction {
     COPY,
     CUT
@@ -103,6 +112,7 @@ data class UiState(
     val mediaAlbums: List<MediaAlbum> = emptyList(),
     val selectedAlbum: MediaAlbum? = null,
     val galleryColumns: Int = 3,
+    val gallerySortOption: GallerySortOption = GallerySortOption.DATE_DESC,
     val isLoadingMedia: Boolean = false,
     val gallerySelection: List<MediaItem> = emptyList(),
 
@@ -162,24 +172,30 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
     private val galleryRefreshFlow = MutableStateFlow(0L)
     private val gallerySearchFlow = MutableStateFlow("")
+    private val gallerySortFlow = MutableStateFlow(GallerySortOption.DATE_DESC)
 
     /**
      * Primary timeline data source. Only the currently loaded Paging window is kept
      * in memory; the Gallery no longer needs the complete MediaStore library.
      */
     val galleryPagingFlow: Flow<PagingData<MediaItem>> =
-        combine(galleryFilterFlow, gallerySearchFlow.debounce(200).distinctUntilChanged(), galleryRefreshFlow) { filter, query, _ ->
-            filter to query.trim()
-        }.flatMapLatest { (filter, query) ->
+        combine(
+            galleryFilterFlow,
+            gallerySearchFlow.debounce(200).distinctUntilChanged(),
+            galleryRefreshFlow,
+            gallerySortFlow
+        ) { filter, query, _, sort -> Triple(filter, query.trim(), sort) }
+        .flatMapLatest { (filter, query, sort) ->
             if (filter == null && query.isBlank()) {
                 mediaRepository.favoritesPager()
             } else if (query.isBlank()) {
-                mediaRepository.pager(filter ?: MediaFilter.ALL)
+                mediaRepository.pager(filter ?: MediaFilter.ALL, sort)
             } else {
                 mediaRepository.searchPager(
                     query,
                     filter ?: MediaFilter.ALL,
-                    favoritesOnly = filter == null
+                    favoritesOnly = filter == null,
+                    sort = sort
                 )
             }
         }.cachedIn(viewModelScope)
