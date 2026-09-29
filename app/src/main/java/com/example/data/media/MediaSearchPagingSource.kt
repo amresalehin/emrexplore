@@ -127,7 +127,7 @@ class MediaSearchPagingSource(
             val placeholders = paths.joinToString(",") { "?" }
             val selection = "(" + baseSelection + ") AND " +
                 MediaStore.Files.FileColumns.DATA + " IN ($placeholders)"
-            val args = paths + baseArgs
+            val args: List<String> = paths + baseArgs
 
             val rows = queryProvider(
                 projection,
