@@ -20,15 +20,16 @@ class MediaStoreAlbumPagingSource(
 ) : PagingSource<MediaCursor, MediaItem>() {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
-    override suspend fun load(params: LoadParams<MediaCursor>): LoadResult<MediaCursor, MediaItem> = try {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return LoadResult.Page(emptyList(), null, null)
+    override suspend fun load(params: LoadParams<MediaCursor>): LoadResult<MediaCursor, MediaItem> {
+        return try {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return@try LoadResult.Page(emptyList(), null, null)
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
         val (cursor, after, reverse) = when (params) {
             is LoadParams.Refresh -> Triple(null, true, false)
             is LoadParams.Append -> Triple(params.key, true, false)
             is LoadParams.Prepend -> Triple(params.key, false, true)
         }
-        if (params !is LoadParams.Refresh && cursor == null) return LoadResult.Page(emptyList(), null, null)
+        if (params !is LoadParams.Refresh && cursor == null) LoadResult.Page(emptyList(), null, null) else {
         val rows = query(cursor, limit, after, reverse)
         val extra = rows.size > limit
         val page = if (extra) rows.take(limit) else rows
