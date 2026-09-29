@@ -17,63 +17,86 @@ class MediaStorePagingSource(
     context: Context,
     private val filter: MediaFilter,
     private val sort: GallerySortOption = GallerySortOption.DATE_DESC
-) : PagingSource<Int, MediaItem>() {
+) : PagingSource<MediaCursor, MediaItem>() {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
-    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
-        val offset = params.key ?: 0
+    override suspend fun load(params: LoadParams<MediaCursor>): LoadResult<MediaCursor, MediaItem> = try {
         val limit = params.loadSize.coerceIn(1, MAX_PAGE_SIZE)
-        return try {
-            val rows = query(offset, limit)
-            LoadResult.Page(rows, if (offset == 0) null else (offset - limit).coerceAtLeast(0), if (rows.size < limit) null else offset + rows.size)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (t: Throwable) {
-            LoadResult.Error(t)
+        val (cursor, after, reverse) = when (params) {
+            is LoadParams.Refresh -> Triple(null, true, false)
+            is LoadParams.Append -> Triple(params.key, true, false)
+            is LoadParams.Prepend -> Triple(params.key, false, true)
         }
+        if (params !is LoadParams.Refresh && cursor == null) return LoadResult.Page(emptyList(), null, null)
+        val rows = query(cursor, limit, after, reverse)
+        val hasExtra = rows.size > limit
+        val page = if (hasExtra) rows.take(limit) else rows
+        val first = page.firstOrNull()?.let(MediaCursor::from)
+        val last = page.lastOrNull()?.let(MediaCursor::from)
+        val prevKey = when {
+            page.isEmpty() -> null
+            params is LoadParams.Prepend && hasExtra -> first
+            params is LoadParams.Refresh -> null
+            else -> first
+        }
+        val nextKey = when {
+            page.isEmpty() -> null
+            params is LoadParams.Prepend -> if (hasExtra) last else null
+            else -> if (hasExtra) last else null
+        }
+        LoadResult.Page(page, prevKey, nextKey)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (t: Throwable) {
+        LoadResult.Error(t)
     }
 
-    private fun query(offset: Int, limit: Int): List<MediaItem> {
-        val projection = arrayOf(MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME, MediaStore.Files.FileColumns.DATA, MediaStore.Files.FileColumns.SIZE, MediaStore.Files.FileColumns.DATE_ADDED, MediaStore.Files.FileColumns.MIME_TYPE, MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.Files.FileColumns.DURATION, MediaStore.Files.FileColumns.WIDTH, MediaStore.Files.FileColumns.HEIGHT, MediaStore.Files.FileColumns.BUCKET_ID, MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
-        val selection = buildSelection()
-        val args = buildSelectionArgs()
-        val uri = MediaStore.Files.getContentUri("external")
-        val sortOrder = when (sort) {
-            GallerySortOption.DATE_DESC -> MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
-            GallerySortOption.DATE_ASC -> MediaStore.Files.FileColumns.DATE_ADDED + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
-            GallerySortOption.NAME_ASC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
-            GallerySortOption.NAME_DESC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
-            GallerySortOption.SIZE_DESC -> MediaStore.Files.FileColumns.SIZE + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
-            GallerySortOption.SIZE_ASC -> MediaStore.Files.FileColumns.SIZE + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+    private fun query(cursor: MediaCursor?, limit: Int, after: Boolean, reverse: Boolean): List<MediaItem> {
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME, MediaStore.Files.FileColumns.DATA,
+            MediaStore.Files.FileColumns.SIZE, MediaStore.Files.FileColumns.DATE_ADDED, MediaStore.Files.FileColumns.MIME_TYPE,
+            MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.Files.FileColumns.DURATION, MediaStore.Files.FileColumns.WIDTH,
+            MediaStore.Files.FileColumns.HEIGHT, MediaStore.Files.FileColumns.BUCKET_ID, MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+        )
+        val clauses = mutableListOf(buildSelection())
+        val args = buildSelectionArgs().toMutableList()
+        cursor?.let {
+            val predicate = sort.cursorPredicate(it, after)
+            clauses += predicate.first
+            args += predicate.second
         }
-        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val limitPlusOne = (limit + 1).coerceAtMost(MAX_PAGE_SIZE + 1)
+        val uri = MediaStore.Files.getContentUri("external")
+        val order = sort.sqlOrder(reverse)
+        val selection = clauses.joinToString(" AND ")
+        val cursorResult = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val queryArgs = Bundle().apply {
                 putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
-                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
-                putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
-                putInt(ContentResolver.QUERY_ARG_OFFSET, offset)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+                putInt(ContentResolver.QUERY_ARG_LIMIT, limitPlusOne)
             }
             resolver.query(uri, projection, queryArgs, null)
         } else {
-            resolver.query(uri, projection, selection, args, "$sortOrder LIMIT $limit OFFSET $offset")
+            resolver.query(uri, projection, selection, args.toTypedArray(), "$order LIMIT $limitPlusOne")
         }
-        return cursor?.use { readCursor(it) } ?: emptyList()
+        val result = cursorResult?.use(::readCursor) ?: emptyList()
+        return if (reverse) result.asReversed() else result
     }
 
     private fun buildSelection() = when (filter) {
-        MediaFilter.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+        MediaFilter.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)",
         MediaFilter.PHOTOS, MediaFilter.VIDEOS -> MediaStore.Files.FileColumns.MEDIA_TYPE + " = ?"
     }
 
     private fun buildSelectionArgs() = when (filter) {
-        MediaFilter.ALL -> arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
-        MediaFilter.PHOTOS -> arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())
-        MediaFilter.VIDEOS -> arrayOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+        MediaFilter.ALL -> listOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(), MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
+        MediaFilter.PHOTOS -> listOf(MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString())
+        MediaFilter.VIDEOS -> listOf(MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString())
     }
 
     private fun readCursor(cursor: Cursor): List<MediaItem> {
-        val result = ArrayList<MediaItem>(cursor.count.coerceAtMost(MAX_PAGE_SIZE))
+        val result = ArrayList<MediaItem>(cursor.count.coerceAtMost(MAX_PAGE_SIZE + 1))
         val id = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
         val name = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
         val data = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
@@ -89,22 +112,26 @@ class MediaStorePagingSource(
         while (cursor.moveToNext()) {
             val rowId = cursor.getLong(id)
             val isVideo = cursor.getInt(mediaType) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-            val contentUri = if (isVideo) ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId) else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
-            result += MediaItem(id = if (isVideo) rowId + VIDEO_ID_OFFSET else rowId, uri = contentUri, name = cursor.getString(name) ?: "Media_$rowId", path = if (data >= 0) cursor.getString(data) ?: "" else "", size = cursor.getLong(size), dateAdded = cursor.getLong(dateAdded) * 1000L, mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*", duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L, width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0, height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0, bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "", bucketName = if (bucketName >= 0) cursor.getString(bucketName) ?: "" else "", isVideo = isVideo)
+            val uri = if (isVideo) ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId) else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
+            result += MediaItem(
+                id = rowId, uri = uri, name = cursor.getString(name) ?: "Media_$rowId",
+                path = if (data >= 0) cursor.getString(data) ?: "" else "", size = cursor.getLong(size),
+                dateAdded = cursor.getLong(dateAdded) * 1000L, mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*",
+                duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L,
+                width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0,
+                height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0,
+                bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "",
+                bucketName = if (bucketName >= 0) cursor.getString(bucketName) ?: "" else "", isVideo = isVideo
+            )
         }
         return result
     }
 
-    override fun getRefreshKey(state: PagingState<Int, MediaItem>): Int? {
-        val anchor = state.anchorPosition ?: return null
-        val page = state.closestPageToPosition(anchor) ?: return null
-        return page.prevKey?.plus(state.config.pageSize) ?: page.nextKey?.minus(state.config.pageSize)
-    }
+    override fun getRefreshKey(state: PagingState<MediaCursor, MediaItem>): MediaCursor? = null
 
     companion object {
         const val MIN_PAGE_SIZE = 60
         const val MAX_PAGE_SIZE = 120
-        private const val VIDEO_ID_OFFSET = 1_000_000L
     }
 }
 
