@@ -453,6 +453,31 @@ class MediaSearchPagingSource(
     }
 }
 
+internal data class QueryPage(
+    val rows: List<MediaItem>,
+    val consumed: Int,
+    val exhausted: Boolean
+)
+
+private fun GallerySortOption.order(reverse: Boolean = false): String {
+    fun direction(ascending: Boolean): String =
+        if (if (reverse) !ascending else ascending) "ASC" else "DESC"
+    return when (this) {
+        GallerySortOption.DATE_DESC ->
+            "${MediaStore.Files.FileColumns.DATE_ADDED} ${direction(false)}, ${MediaStore.Files.FileColumns._ID} ${direction(false)}"
+        GallerySortOption.DATE_ASC ->
+            "${MediaStore.Files.FileColumns.DATE_ADDED} ${direction(true)}, ${MediaStore.Files.FileColumns._ID} ${direction(true)}"
+        GallerySortOption.NAME_ASC ->
+            "${MediaStore.Files.FileColumns.DISPLAY_NAME} COLLATE NOCASE ${direction(true)}, ${MediaStore.Files.FileColumns._ID} ${direction(true)}"
+        GallerySortOption.NAME_DESC ->
+            "${MediaStore.Files.FileColumns.DISPLAY_NAME} COLLATE NOCASE ${direction(false)}, ${MediaStore.Files.FileColumns._ID} ${direction(false)}"
+        GallerySortOption.SIZE_DESC ->
+            "${MediaStore.Files.FileColumns.SIZE} ${direction(false)}, ${MediaStore.Files.FileColumns._ID} ${direction(false)}"
+        GallerySortOption.SIZE_ASC ->
+            "${MediaStore.Files.FileColumns.SIZE} ${direction(true)}, ${MediaStore.Files.FileColumns._ID} ${direction(true)}"
+    }
+}
+
 private fun GallerySortOption.cursorPredicate(cursor: MediaCursor, after: Boolean): Pair<String, List<String>> {
     val ascending = this == GallerySortOption.DATE_ASC || this == GallerySortOption.NAME_ASC || this == GallerySortOption.SIZE_ASC
     val op = if (if (ascending) after else !after) ">" else "<"
