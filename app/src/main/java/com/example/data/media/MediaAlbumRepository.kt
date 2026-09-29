@@ -24,13 +24,11 @@ class MediaAlbumRepository(context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.O)
     private fun queryGroupedAlbums(): List<MediaAlbum> {
-        val projection = arrayOf(
+        val groupedProjection = arrayOf(
             MediaStore.Files.FileColumns.BUCKET_ID,
-            MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME,
-            MediaStore.Files.FileColumns._ID,
-            MediaStore.Files.FileColumns.MEDIA_TYPE
+            MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
         )
-        val args = Bundle().apply {
+        val groupedArgs = Bundle().apply {
             putString(
                 ContentResolver.QUERY_ARG_SQL_SELECTION,
                 MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
@@ -55,84 +53,68 @@ class MediaAlbumRepository(context: Context) {
             )
         }
 
-        val result = mutableListOf<MediaAlbum>()
-        resolver.query(MediaStore.Files.getContentUri("external"), projection, args, null)?.use { cursor ->
+        val albums = LinkedHashMap<String, String>()
+        resolver.query(MediaStore.Files.getContentUri("external"), groupedProjection, groupedArgs, null)?.use { cursor ->
             val idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
             val nameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
-            val rowIdColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
-            val typeColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE)
-
             while (cursor.moveToNext()) {
-                val bucketId = if (idColumn >= 0) cursor.getString(idColumn) ?: "" else ""
-                val name = if (nameColumn >= 0) cursor.getString(nameColumn) ?: "Unknown" else "Unknown"
-                val rowId = if (rowIdColumn >= 0) cursor.getLong(rowIdColumn) else -1L
-                val isVideo = typeColumn >= 0 &&
-                    cursor.getInt(typeColumn) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-                val coverUri = if (rowId >= 0) {
-                    if (isVideo) {
-                        android.content.ContentUris.withAppendedId(
-                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId
-                        )
-                    } else {
-                        android.content.ContentUris.withAppendedId(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId
-                        )
-                    }
-                } else null
+                val id = if (idColumn >= 0) cursor.getString(idColumn).orEmpty() else ""
+                val name = if (nameColumn >= 0) cursor.getString(nameColumn).orEmpty() else ""
+                if (id.isNotBlank() && name.isNotBlank()) albums[id] = name
+            }
+        }
+        if (albums.isEmpty()) return emptyList()
 
-                if (bucketId.isNotBlank() && name.isNotBlank()) {
-                    val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " +
-                        MediaStore.Files.FileColumns.BUCKET_ID + " = ?"
-                    val selectionArgs = arrayOf(
-                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-                        bucketId
-                    )
-                    val count = resolver.query(
-                        MediaStore.Files.getContentUri("external"),
-                        arrayOf(MediaStore.Files.FileColumns._ID),
-                        selection,
-                        selectionArgs,
-                        null
-                    )?.use { it.count } ?: 0
+        val counts = HashMap<String, Int>(albums.size)
+        val covers = HashMap<String, android.net.Uri>(albums.size)
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns.BUCKET_ID,
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.MEDIA_TYPE
+        )
+        val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+        val args = arrayOf(
+            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+        )
+        val order = MediaStore.Files.FileColumns.BUCKET_ID + " ASC, " +
+            MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+            MediaStore.Files.FileColumns._ID + " DESC"
 
-                    val coverProjection = arrayOf(
-                        MediaStore.Files.FileColumns._ID,
-                        MediaStore.Files.FileColumns.MEDIA_TYPE
-                    )
-                    val deterministicCover = resolver.query(
-                        MediaStore.Files.getContentUri("external"),
-                        coverProjection,
-                        selection,
-                        selectionArgs,
-                        MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-                            MediaStore.Files.FileColumns._ID + " DESC LIMIT 1"
-                    )?.use { coverCursor ->
-                        if (coverCursor.moveToFirst()) {
-                            val coverId = coverCursor.getLong(
-                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                            )
-                            val coverVideo = coverCursor.getInt(
-                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
-                            ) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-                            ContentUris.withAppendedId(
-                                if (coverVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                coverId
-                            )
-                        } else null
-                    }
-
-                    result += MediaAlbum(
-                        id = bucketId,
-                        name = name,
-                        coverUri = deterministicCover ?: coverUri,
-                        itemCount = count
+        resolver.query(
+            MediaStore.Files.getContentUri("external"),
+            projection,
+            selection,
+            args,
+            order
+        )?.use { cursor ->
+            val bucket = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.BUCKET_ID)
+            val id = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+            val type = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+            while (cursor.moveToNext()) {
+                val bucketId = cursor.getString(bucket).orEmpty()
+                if (!albums.containsKey(bucketId)) continue
+                counts[bucketId] = (counts[bucketId] ?: 0) + 1
+                if (!covers.containsKey(bucketId)) {
+                    val rowId = cursor.getLong(id)
+                    val isVideo = cursor.getInt(type) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                    covers[bucketId] = ContentUris.withAppendedId(
+                        if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        rowId
                     )
                 }
             }
         }
-        return result
+
+        return albums.map { (id, name) ->
+            MediaAlbum(
+                id = id,
+                name = name,
+                coverUri = covers[id],
+                itemCount = counts[id] ?: 0
+            )
+        }
     }
 
     private fun queryAlbumsCompat(): List<MediaAlbum> {
