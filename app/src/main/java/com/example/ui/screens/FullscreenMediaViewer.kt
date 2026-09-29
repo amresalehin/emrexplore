@@ -73,16 +73,15 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.example.data.model.FileItem
 import com.example.data.model.MediaItem
+import com.example.data.media.MediaViewerWindow
 import com.example.ui.components.formatDate
 import com.example.ui.components.formatFileSize
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FullscreenMediaViewer(
-    mediaList: List<MediaItem>,
+    viewerWindow: MediaViewerWindow,
     currentIndex: Int,
-    windowStartIndex: Int = 0,
-    totalCount: Int = mediaList.size,
     onClose: () -> Unit,
     onIndexChange: (Int) -> Unit,
     onToggleFavorite: (FileItem) -> Unit,
@@ -91,6 +90,9 @@ fun FullscreenMediaViewer(
     BackHandler { onClose() }
 
     val context = LocalContext.current
+    val mediaList = viewerWindow.items
+    val windowStartIndex = viewerWindow.startIndex
+    val totalCount = viewerWindow.totalCount.coerceAtLeast(mediaList.size)
     val localIndex = (currentIndex - windowStartIndex).coerceIn(0, (mediaList.size - 1).coerceAtLeast(0))
     val currentItem = mediaList.getOrNull(localIndex) ?: return
     var showControls by remember { mutableStateOf(true) }
