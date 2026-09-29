@@ -271,7 +271,7 @@ class MediaSearchPagingSource(
             }
 
             result += MediaItem(
-                id = if (isVideo) rowId + VIDEO_ID_OFFSET else rowId,
+                id = rowId,
                 uri = uri,
                 name = cursor.getString(name) ?: "Media_$rowId",
                 path = if (data >= 0) cursor.getString(data) ?: "" else "",
@@ -363,8 +363,7 @@ class MediaSearchPagingSource(
     }
 
     companion object {
-        private const val VIDEO_ID_OFFSET = 1_000_000L
-    }
+        }
 }
 
 private data class QueryPage(
