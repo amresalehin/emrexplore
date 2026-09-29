@@ -65,6 +65,19 @@ interface FavoriteDao {
     @Query("SELECT COUNT(*) FROM favorites WHERE timestamp > :timestamp OR (timestamp = :timestamp AND path < :path)")
     suspend fun countFavoritesBefore(timestamp: Long, path: String): Int
 
+    @Query("SELECT * FROM favorites WHERE (lastModified > :date OR (lastModified = :date AND path < :path)) ORDER BY lastModified ASC, path DESC LIMIT :limit")
+    suspend fun getFavoritesDateDescBefore(date: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (lastModified < :date OR (lastModified = :date AND path > :path)) ORDER BY lastModified DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesDateAscBefore(date: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (name COLLATE NOCASE < :name OR (name COLLATE NOCASE = :name AND path < :path)) ORDER BY name COLLATE NOCASE DESC, path DESC LIMIT :limit")
+    suspend fun getFavoritesNameAscBefore(name: String, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (name COLLATE NOCASE > :name OR (name COLLATE NOCASE = :name AND path > :path)) ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesNameDescBefore(name: String, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (size > :size OR (size = :size AND path < :path)) ORDER BY size ASC, path DESC LIMIT :limit")
+    suspend fun getFavoritesSizeDescBefore(size: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (size < :size OR (size = :size AND path > :path)) ORDER BY size DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesSizeAscBefore(size: Long, path: String, limit: Int): List<FavoriteEntity>
+
     @Query("SELECT COUNT(*) FROM favorites")
     suspend fun getFavoriteCount(): Int
 
