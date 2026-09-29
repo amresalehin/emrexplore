@@ -17,20 +17,35 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
     suspend fun isFavoriteSync(path: String): Boolean
 
-    @Query("SELECT path FROM favorites")
-    suspend fun getAllFavoritePathsSync(): List<String>
-
     @Query("SELECT path FROM favorites ORDER BY timestamp DESC, path ASC LIMIT :limit OFFSET :offset")
     suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
+
+    @Query("SELECT * FROM favorites ORDER BY mediaDateAdded DESC, path DESC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageDateDesc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY mediaDateAdded ASC, path ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageDateAsc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageNameAsc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE DESC, path DESC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageNameDesc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY mediaSize DESC, path DESC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageSizeDesc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY mediaSize ASC, path ASC LIMIT :limit OFFSET :offset")
+    suspend fun getFavoritePageSizeAsc(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT COUNT(*) FROM favorites")
+    suspend fun getFavoriteCount(): Int
 
     @Query("SELECT timestamp FROM favorites WHERE path = :path LIMIT 1")
     suspend fun getFavoriteTimestamp(path: String): Long?
 
     @Query("SELECT COUNT(*) FROM favorites WHERE timestamp > :timestamp OR (timestamp = :timestamp AND path < :path)")
     suspend fun countFavoritesBefore(timestamp: Long, path: String): Int
-
-    @Query("SELECT COUNT(*) FROM favorites")
-    suspend fun getFavoriteCount(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
