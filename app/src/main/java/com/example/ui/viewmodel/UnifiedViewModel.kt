@@ -956,6 +956,12 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update { it.copy(galleryRecentSearches = emptyList()) }
     }
 
+    fun removeGalleryRecentSearch(query: String) {
+        _uiState.update { state ->
+            state.copy(galleryRecentSearches = state.galleryRecentSearches.filterNot { it.equals(query, ignoreCase = true) })
+        }
+    }
+
     fun clearGallerySearch() {
         _uiState.update {
             it.copy(
@@ -1596,7 +1602,7 @@ private fun composeGallerySearchQuery(
     val tokens = mutableListOf<String>()
     if (query.isNotBlank()) tokens += query.trim()
     when (dateFilter) {
-        "TODAY" -> tokens += "date:today"
+        "TODAY" -> tokens += "date:${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())}
         "LAST_7_DAYS" -> tokens += "after:${daysAgoSearchToken(7)}"
         "THIS_MONTH" -> tokens += "month:${monthSearchToken()}"
         "THIS_YEAR" -> tokens += "year:${yearSearchToken()}"
