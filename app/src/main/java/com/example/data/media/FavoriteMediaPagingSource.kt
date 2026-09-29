@@ -15,6 +15,33 @@ import com.example.data.model.MediaItem
 import com.example.ui.viewmodel.GallerySortOption
 import kotlinx.coroutines.CancellationException
 
+/** Stable Room ordering cursor; paging is independent of absolute row offsets. */
+data class FavoriteCursor(
+    val longValue: Long = 0L,
+    val textValue: String = "",
+    val path: String
+) {
+    companion object {
+        fun from(entity: FavoriteEntity, sort: GallerySortOption): FavoriteCursor = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                FavoriteCursor(longValue = entity.mediaDateAdded, path = entity.path)
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                FavoriteCursor(textValue = entity.name, path = entity.path)
+            GallerySortOption.SIZE_DESC, GallerySortOption.SIZE_ASC ->
+                FavoriteCursor(longValue = entity.mediaSize, path = entity.path)
+        }
+
+        fun from(item: MediaItem, sort: GallerySortOption): FavoriteCursor = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                FavoriteCursor(longValue = item.dateAdded, path = item.path)
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                FavoriteCursor(textValue = item.name, path = item.path)
+            GallerySortOption.SIZE_DESC, GallerySortOption.SIZE_ASC ->
+                FavoriteCursor(longValue = item.size, path = item.path)
+        }
+    }
+}
+
 /**
  * Bounded favorite paging: Room supplies only one page of favorite identities,
  * then MediaStore resolves only those identities. No full favorite set is loaded.
@@ -22,34 +49,29 @@ import kotlinx.coroutines.CancellationException
 class FavoriteMediaPagingSource(
     context: Context,
     private val sort: GallerySortOption = GallerySortOption.DATE_DESC
-) : PagingSource<Int, MediaItem>() {
+) : PagingSource<FavoriteCursor, MediaItem>() {
 
     private val appContext = context.applicationContext
     private val resolver: ContentResolver = appContext.contentResolver
     private val favoriteDao = AppDatabase.getDatabase(appContext).favoriteDao()
 
-    override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
-        val offset = params.key ?: 0
+    override suspend fun load(params: LoadParams<FavoriteCursor>): LoadResult<FavoriteCursor, MediaItem> {
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
         return try {
-            val favorites = loadFavoritePage(limit, offset)
-            if (favorites.isEmpty()) {
-                return LoadResult.Page(
-                    emptyList(),
-                    if (offset == 0) null else (offset - limit).coerceAtLeast(0),
-                    null
-                )
-            }
-
-            val rows = queryMediaForFavorites(favorites)
+            val prepend = params is LoadParams.Prepend
+            val entities = if (prepend) loadBefore(params.key, limit + 1) else loadAfter(params.key, limit + 1)
+            if (entities.isEmpty()) return LoadResult.Page(emptyList(), null, null)
+            val hasMore = entities.size > limit
+            val pageEntities = entities.take(limit)
+            val rows = queryMediaForFavorites(pageEntities)
             val byPath = rows.associateBy { it.path }
-            val page = favorites.mapNotNull { favorite -> byPath[favorite.path]?.copy(isFavorite = true) }
-            val total = favoriteDao.getFavoriteCount()
-
+            val page = pageEntities.mapNotNull { byPath[it.path]?.copy(isFavorite = true) }
+            val firstCursor = FavoriteCursor.from(pageEntities.first(), sort)
+            val lastCursor = FavoriteCursor.from(pageEntities.last(), sort)
             LoadResult.Page(
-                data = page,
-                prevKey = if (offset == 0) null else (offset - limit).coerceAtLeast(0),
-                nextKey = if (offset + favorites.size < total) offset + favorites.size else null
+                data = if (prepend) page.asReversed() else page,
+                prevKey = if (prepend && hasMore) firstCursor else null,
+                nextKey = if (!prepend && hasMore) lastCursor else null
             )
         } catch (e: CancellationException) {
             throw e
@@ -73,15 +95,49 @@ class FavoriteMediaPagingSource(
             favoriteDao.countFavoriteSizeAscBefore(item.size, item.path)
     }
 
-    private suspend fun loadFavoritePage(limit: Int, offset: Int): List<FavoriteEntity> =
-        when (sort) {
-            GallerySortOption.DATE_DESC -> favoriteDao.getFavoritePageDateDesc(limit, offset)
-            GallerySortOption.DATE_ASC -> favoriteDao.getFavoritePageDateAsc(limit, offset)
-            GallerySortOption.NAME_ASC -> favoriteDao.getFavoritePageNameAsc(limit, offset)
-            GallerySortOption.NAME_DESC -> favoriteDao.getFavoritePageNameDesc(limit, offset)
-            GallerySortOption.SIZE_DESC -> favoriteDao.getFavoritePageSizeDesc(limit, offset)
-            GallerySortOption.SIZE_ASC -> favoriteDao.getFavoritePageSizeAsc(limit, offset)
+    private suspend fun loadAfter(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> = when (sort) {
+        GallerySortOption.DATE_DESC -> favoriteDao.getDateDescAfter(cursor?.longValue, cursor?.path, limit)
+        GallerySortOption.DATE_ASC -> favoriteDao.getDateAscAfter(cursor?.longValue, cursor?.path, limit)
+        GallerySortOption.NAME_ASC -> favoriteDao.getNameAscAfter(cursor?.textValue, cursor?.path, limit)
+        GallerySortOption.NAME_DESC -> favoriteDao.getNameDescAfter(cursor?.textValue, cursor?.path, limit)
+        GallerySortOption.SIZE_DESC -> favoriteDao.getSizeDescAfter(cursor?.longValue, cursor?.path, limit)
+        GallerySortOption.SIZE_ASC -> favoriteDao.getSizeAscAfter(cursor?.longValue, cursor?.path, limit)
+    }
+
+    private suspend fun loadBefore(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> {
+        val c = requireNotNull(cursor) { "Cursor required for prepend" }
+        val rows = when (sort) {
+            GallerySortOption.DATE_DESC -> favoriteDao.getDateDescBefore(c.longValue, c.path, limit)
+            GallerySortOption.DATE_ASC -> favoriteDao.getDateAscBefore(c.longValue, c.path, limit)
+            GallerySortOption.NAME_ASC -> favoriteDao.getNameAscBefore(c.textValue, c.path, limit)
+            GallerySortOption.NAME_DESC -> favoriteDao.getNameDescBefore(c.textValue, c.path, limit)
+            GallerySortOption.SIZE_DESC -> favoriteDao.getSizeDescBefore(c.longValue, c.path, limit)
+            GallerySortOption.SIZE_ASC -> favoriteDao.getSizeAscBefore(c.longValue, c.path, limit)
         }
+        return rows.asReversed()
+    }
+
+    suspend fun loadViewerWindowAround(item: MediaItem, radius: Int = 2): MediaViewerWindow {
+        val center = FavoriteCursor.from(item, sort)
+        val before = loadBefore(center, radius)
+        val after = loadAfter(center, radius)
+        val entities = before + listOf(item.toFavoriteEntity()) + after
+        val rows = queryMediaForFavorites(entities)
+        val byPath = rows.associateBy { it.path }
+        val items = entities.mapNotNull { byPath[it.path]?.copy(isFavorite = true) }
+        val position = positionOf(item)
+        return MediaViewerWindow((position - before.size).coerceAtLeast(0), items, favoriteDao.getFavoriteCount())
+    }
+
+    private fun MediaItem.toFavoriteEntity() = FavoriteEntity(
+        path = path,
+        name = name,
+        isDirectory = false,
+        mimeType = mimeType,
+        mediaUri = uri.toString(),
+        mediaDateAdded = dateAdded,
+        mediaSize = size
+    )
 
     private fun queryMediaForFavorites(favorites: List<FavoriteEntity>): List<MediaItem> {
         val paths = favorites.map { it.path }.filter { it.isNotBlank() }
@@ -173,9 +229,8 @@ class FavoriteMediaPagingSource(
         return result
     }
 
-    override fun getRefreshKey(state: PagingState<Int, MediaItem>): Int? {
+    override fun getRefreshKey(state: PagingState<FavoriteCursor, MediaItem>): FavoriteCursor? {
         val anchor = state.anchorPosition ?: return null
-        val page = state.closestPageToPosition(anchor) ?: return null
-        return page.prevKey?.plus(state.config.pageSize) ?: page.nextKey?.minus(state.config.pageSize)
+        return state.closestItemToPosition(anchor)?.let { FavoriteCursor.from(it, sort) }
     }
 }
