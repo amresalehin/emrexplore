@@ -335,6 +335,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
             onInspectMetadata = { mediaItem -> viewModel.inspectMetadata(mediaItem) }
             )
         }
+    }
 
     // 2. In-App Text File Editor
     if (uiState.activeTextFile != null) {
