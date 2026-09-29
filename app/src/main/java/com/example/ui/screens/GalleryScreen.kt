@@ -360,7 +360,7 @@ fun GalleryScreen(
                 onClear = { viewModel.clearGallerySelection() },
                 onFavorite = { viewModel.favoriteGallerySelection() },
                 onShare = {
-                    val uris = ArrayList(uiState.gallerySelection.map { it.uri })
+                    val uris = ArrayList(uiState.gallerySelection.map { android.net.Uri.parse(it) })
                     try {
                         val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                             type = "*/*"
@@ -402,7 +402,7 @@ fun GalleryScreen(
                         }
                     },
                     onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
-                    selectedPaths = uiState.gallerySelection.map { it.path }.toSet()
+                    selectedUris = uiState.gallerySelection
                 )
             }
         } else {
@@ -511,7 +511,7 @@ private fun PagedMediaGrid(
     columns: Int,
     onItemClick: (MediaItem) -> Unit,
     onItemLongClick: (MediaItem) -> Unit = {},
-    selectedPaths: Set<String> = emptySet()
+    selectedUris: Set<String> = emptySet()
 ) {
     LazyVerticalGrid(
         state = gridState,
@@ -563,7 +563,7 @@ private fun PagedMediaGrid(
                         item = item,
                         onClick = { onItemClick(item) },
                         onLongClick = { onItemLongClick(item) },
-                        selected = item.path in selectedPaths
+                        selected = item.uri.toString() in selectedUris
                     )
                 }
                 null -> {
