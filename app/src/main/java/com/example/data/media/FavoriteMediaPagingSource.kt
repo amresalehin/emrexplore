@@ -97,12 +97,12 @@ class FavoriteMediaPagingSource(
     }
 
     private suspend fun loadAfter(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> = when (sort) {
-        GallerySortOption.DATE_DESC -> favoriteDao.getDateDescAfter(cursor?.longValue, cursor?.path, limit)
-        GallerySortOption.DATE_ASC -> favoriteDao.getDateAscAfter(cursor?.longValue, cursor?.path, limit)
-        GallerySortOption.NAME_ASC -> favoriteDao.getNameAscAfter(cursor?.textValue, cursor?.path, limit)
-        GallerySortOption.NAME_DESC -> favoriteDao.getNameDescAfter(cursor?.textValue, cursor?.path, limit)
-        GallerySortOption.SIZE_DESC -> favoriteDao.getSizeDescAfter(cursor?.longValue, cursor?.path, limit)
-        GallerySortOption.SIZE_ASC -> favoriteDao.getSizeAscAfter(cursor?.longValue, cursor?.path, limit)
+        GallerySortOption.DATE_DESC -> if (cursor == null) favoriteDao.getDateDescFirst(limit) else favoriteDao.getDateDescAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.DATE_ASC -> if (cursor == null) favoriteDao.getDateAscFirst(limit) else favoriteDao.getDateAscAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.NAME_ASC -> if (cursor == null) favoriteDao.getNameAscFirst(limit) else favoriteDao.getNameAscAfter(cursor.textValue, cursor.path, limit)
+        GallerySortOption.NAME_DESC -> if (cursor == null) favoriteDao.getNameDescFirst(limit) else favoriteDao.getNameDescAfter(cursor.textValue, cursor.path, limit)
+        GallerySortOption.SIZE_DESC -> if (cursor == null) favoriteDao.getSizeDescFirst(limit) else favoriteDao.getSizeDescAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.SIZE_ASC -> if (cursor == null) favoriteDao.getSizeAscFirst(limit) else favoriteDao.getSizeAscAfter(cursor.longValue, cursor.path, limit)
     }
 
     private suspend fun loadBefore(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> {
