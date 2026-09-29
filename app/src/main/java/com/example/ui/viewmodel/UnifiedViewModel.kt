@@ -1095,25 +1095,30 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun openFullscreenMedia(
         item: MediaItem,
-        list: List<MediaItem>,
         source: FullscreenMediaSource? = null,
         albumId: String? = null
     ) {
         val stateBeforeOpen = _uiState.value
-        val fallbackIndex = list.indexOfFirst { it.path == item.path }.takeIf { it >= 0 } ?: 0
         val searchFavoriteOnly = stateBeforeOpen.galleryFilter == "FAVORITES"
+
         _uiState.update {
             it.copy(
-                fullscreenMediaIndex = fallbackIndex,
-                fullscreenViewerWindow = MediaViewerWindow(fallbackIndex, listOf(item), list.size),
+                fullscreenMediaIndex = 0,
+                fullscreenViewerWindow = MediaViewerWindow(0, listOf(item), 1),
                 fullscreenSource = source,
                 fullscreenAlbumId = albumId,
-                fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchSubmittedQuery else "",
-                fullscreenSearchFavoriteOnly = if (source == FullscreenMediaSource.SEARCH) searchFavoriteOnly else false,
+                fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) {
+                    stateBeforeOpen.gallerySearchSubmittedQuery
+                } else "",
+                fullscreenSearchFavoriteOnly = if (source == FullscreenMediaSource.SEARCH) {
+                    searchFavoriteOnly
+                } else false,
                 fullscreenLoading = source != null
             )
         }
+
         if (source == null) return
+
         fullscreenLoadJob?.cancel()
         fullscreenLoadJob = viewModelScope.launch {
             try {
@@ -1128,7 +1133,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         query = stateBeforeOpen.gallerySearchSubmittedQuery,
                         filter = filter,
                         favoritesOnly = searchFavoriteOnly,
-                        radius = 2
+                        radius = 2,
+                        sort = stateBeforeOpen.gallerySortOption
                     )
                     _uiState.update {
                         it.copy(
@@ -1140,17 +1146,16 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
 
-                val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId, stateBeforeOpen.gallerySortOption)
                 val window = mediaRepository.loadViewerWindow(
-                    source,
-                    item,
+                    source = source,
+                    centerItem = item,
                     radius = 2,
                     albumId = albumId,
                     sort = stateBeforeOpen.gallerySortOption
                 )
                 _uiState.update {
                     it.copy(
-                        fullscreenMediaIndex = absoluteIndex,
+                        fullscreenMediaIndex = window.startIndex,
                         fullscreenViewerWindow = window,
                         fullscreenLoading = false
                     )
