@@ -89,7 +89,7 @@ class MainActivity : ComponentActivity() {
             }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizeBytes(memoryCacheBytes)
+                    .maxSizeBytes(memoryCacheBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     .build()
             }
             .diskCache {
