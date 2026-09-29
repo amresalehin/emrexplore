@@ -1846,7 +1846,10 @@ class FileRepository(private val context: Context) {
                     path = fileItem.path,
                     name = fileItem.name,
                     isDirectory = fileItem.isDirectory,
-                    mimeType = fileItem.mimeType
+                    mimeType = fileItem.mimeType,
+                    mediaUri = fileItem.uri?.toString() ?: "",
+                    mediaDateAdded = fileItem.lastModified,
+                    mediaSize = fileItem.size
                 )
             )
             true
