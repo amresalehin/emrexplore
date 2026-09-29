@@ -271,7 +271,7 @@ class MediaSearchPagingSource(
             }
 
             result += MediaItem(
-                id = if (isVideo) rowId + VIDEO_ID_OFFSET else rowId,
+                id = rowId,
                 uri = uri,
                 name = cursor.getString(name) ?: "Media_$rowId",
                 path = if (data >= 0) cursor.getString(data) ?: "" else "",
@@ -355,6 +355,65 @@ class MediaSearchPagingSource(
         return 6371.0 * 2.0 * asin(sqrt(a))
     }
 
+    suspend fun loadAround(item: MediaItem, radius: Int = 2): List<MediaItem> {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) {
+            return FavoriteMediaPagingSource(appContext, sort).loadAround(item, radius * 4)
+                .filter { candidate -> matchesSearchWithoutMetadata(candidate, active) }
+                .take(radius + 1)
+        }
+        val beforeRows = queryCursor(MediaCursor.from(item), radius * 8, after = false, reverse = true, active)
+        val afterRows = queryCursor(MediaCursor.from(item), radius * 8, after = true, reverse = false, active)
+        val before = filterMetadataRows(beforeRows, active).takeLast(radius)
+        val after = filterMetadataRows(afterRows, active).take(radius)
+        return (before + item + after).distinctBy { it.uri }
+    }
+
+    suspend fun positionOf(item: MediaItem): Int {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) return FavoriteMediaPagingSource(appContext, sort).positionOf(item)
+        val predicate = sort.cursorPredicate(MediaCursor.from(item), after = false)
+        val selection = "(" + buildProviderSelection(active) + ") AND (" + predicate.first + ")"
+        val args = buildProviderArgs(active) + predicate.second
+        return countProvider(selection, args.toTypedArray())
+    }
+
+    suspend fun totalCount(): Int {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) return AppDatabase.getDatabase(appContext).favoriteDao().getFavoriteCount()
+        return countProvider(buildProviderSelection(active), buildProviderArgs(active).toTypedArray())
+    }
+
+    private suspend fun queryCursor(cursor: MediaCursor, limit: Int, after: Boolean, reverse: Boolean, p: ParsedMediaSearch): List<MediaItem> {
+        val predicate = sort.cursorPredicate(cursor, after)
+        val rows = queryProvider(projection(), "(" + buildProviderSelection(p) + ") AND (" + predicate.first + ")", (buildProviderArgs(p) + predicate.second).toTypedArray(), 0, limit, sort.sqlOrder(reverse))
+        return if (reverse) rows.asReversed() else rows
+    }
+
+    private suspend fun filterMetadataRows(rows: List<MediaItem>, p: ParsedMediaSearch): List<MediaItem> {
+        if (!p.requiresMetadata) return rows
+        val result = ArrayList<MediaItem>(rows.size)
+        for (row in rows) if (matchesMetadata(row, p)) result += row
+        return result
+    }
+
+    private fun matchesSearchWithoutMetadata(item: MediaItem, p: ParsedMediaSearch): Boolean {
+        val name = item.name.lowercase(Locale.US)
+        val path = item.path.lowercase(Locale.US)
+        return p.nameTerms.all { term -> name.contains(term.lowercase(Locale.US)) || path.contains(term.lowercase(Locale.US)) } &&
+            (p.type == null || (p.type == MediaFilter.VIDEOS) == item.isVideo)
+    }
+
+    private fun projection(): Array<String> = arrayOf(
+        MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME, MediaStore.Files.FileColumns.DATA,
+        MediaStore.Files.FileColumns.SIZE, MediaStore.Files.FileColumns.DATE_ADDED, MediaStore.Files.FileColumns.MIME_TYPE,
+        MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.Files.FileColumns.DURATION, MediaStore.Files.FileColumns.WIDTH,
+        MediaStore.Files.FileColumns.HEIGHT, MediaStore.Files.FileColumns.BUCKET_ID, MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+    )
+
+    private fun countProvider(selection: String, args: Array<String>): Int =
+        resolver.query(MediaStore.Files.getContentUri("external"), arrayOf(MediaStore.Files.FileColumns._ID), selection, args, null)?.use { it.count } ?: 0
+
     override fun getRefreshKey(state: PagingState<Int, MediaItem>): Int? {
         val anchor = state.anchorPosition ?: return null
         val page = state.closestPageToPosition(anchor) ?: return null
@@ -362,9 +421,7 @@ class MediaSearchPagingSource(
             ?: page.nextKey?.minus(state.config.pageSize)
     }
 
-    companion object {
-        private const val VIDEO_ID_OFFSET = 1_000_000L
-    }
+    companion object
 }
 
 private data class QueryPage(
