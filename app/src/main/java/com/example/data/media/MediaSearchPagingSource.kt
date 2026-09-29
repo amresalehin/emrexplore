@@ -45,6 +45,152 @@ class MediaSearchPagingSource(
     private val parsed = MediaSearchParser.parse(rawQuery, baseFilter)
     private var resolvedParsed: ParsedMediaSearch? = null
 
+    /**
+     * Resolves viewer position with one provider COUNT query instead of replaying
+     * every search page up to the target.
+     *
+     * Metadata-only predicates are evaluated from the persistent metadata cache
+     * during normal paging; the provider count remains the bounded fallback for
+     * those mixed predicates.
+     */
+    suspend fun positionOf(item: MediaItem): Int {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) {
+            return FavoriteMediaPagingSource(appContext, sort).positionOf(item)
+        }
+        val (selection, args) = buildCursorCountSelection(active, item, before = true)
+        return resolver.query(
+            MediaStore.Files.getContentUri("external"),
+            arrayOf(MediaStore.Files.FileColumns._ID),
+            selection,
+            args.toTypedArray(),
+            null
+        )?.use { it.count } ?: 0
+    }
+
+    suspend fun totalCount(): Int {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) {
+            return AppDatabase.getDatabase(appContext).favoriteDao().getFavoriteCount()
+        }
+        val selection = buildProviderSelection(active)
+        val args = buildProviderArgs(active).toTypedArray()
+        return resolver.query(
+            MediaStore.Files.getContentUri("external"),
+            arrayOf(MediaStore.Files.FileColumns._ID),
+            selection,
+            args,
+            null
+        )?.use { it.count } ?: 0
+    }
+
+    suspend fun loadViewerWindowAround(
+        item: MediaItem,
+        radius: Int = 2
+    ): MediaViewerWindow {
+        val active = resolveParsed()
+        if (favoritesOnly || active.favoritesOnly) {
+            val pager = FavoriteMediaPagingSource(appContext, sort)
+            val position = pager.positionOf(item)
+            val start = (position - radius).coerceAtLeast(0)
+            return when (val result = pager.load(
+                PagingSource.LoadParams.Refresh(
+                    start,
+                    radius * 2 + 1,
+                    false
+                )
+            )) {
+                is PagingSource.LoadResult.Page ->
+                    MediaViewerWindow(start, result.data, totalCount())
+                is PagingSource.LoadResult.Error -> throw result.throwable
+                is PagingSource.LoadResult.Invalid -> MediaViewerWindow(start, emptyList(), 0)
+            }
+        }
+
+        val position = positionOf(item)
+        val total = totalCount()
+        val before = queryCursorWindow(active, item, radius, before = true)
+        val after = queryCursorWindow(active, item, radius, before = false)
+        return MediaViewerWindow(
+            startIndex = (position - before.size).coerceAtLeast(0),
+            items = before + item + after,
+            totalCount = total
+        )
+    }
+
+    private fun buildCursorCountSelection(
+        p: ParsedMediaSearch,
+        item: MediaItem,
+        before: Boolean
+    ): Pair<String, List<String>> {
+        val base = buildProviderSelection(p)
+        val args = buildProviderArgs(p).toMutableList()
+        val rawId = item.id
+        val (column, value) = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                MediaStore.Files.FileColumns.DATE_ADDED to (item.dateAdded / 1000L).toString()
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE" to item.name
+            GallerySortOption.SIZE_ASC, GallerySortOption.SIZE_DESC ->
+                MediaStore.Files.FileColumns.SIZE to item.size.toString()
+        }
+        val ascending = sort == GallerySortOption.DATE_ASC ||
+            sort == GallerySortOption.NAME_ASC ||
+            sort == GallerySortOption.SIZE_ASC
+        val op = if (if (ascending) before else !before) "<" else ">"
+        val cursor = "(" + column + " " + op + " ? OR (" + column + " = ? AND " +
+            MediaStore.Files.FileColumns._ID + " " + op + " ?))"
+        args += value
+        args += value
+        args += rawId.toString()
+        return "(" + base + ") AND " + cursor to args
+    }
+
+    private suspend fun queryCursorWindow(
+        p: ParsedMediaSearch,
+        center: MediaItem,
+        limit: Int,
+        before: Boolean
+    ): List<MediaItem> {
+        val (selection, args) = buildCursorCountSelection(p, center, before)
+        val order = when (sort) {
+            GallerySortOption.DATE_DESC -> MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.DATE_ASC -> MediaStore.Files.FileColumns.DATE_ADDED + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+            GallerySortOption.NAME_ASC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+            GallerySortOption.NAME_DESC -> MediaStore.Files.FileColumns.DISPLAY_NAME + " COLLATE NOCASE DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.SIZE_DESC -> MediaStore.Files.FileColumns.SIZE + " DESC, " + MediaStore.Files.FileColumns._ID + " DESC"
+            GallerySortOption.SIZE_ASC -> MediaStore.Files.FileColumns.SIZE + " ASC, " + MediaStore.Files.FileColumns._ID + " ASC"
+        }
+        val reverseOrder = if (before) {
+            order.replace(" ASC", " __ASC__").replace(" DESC", " ASC").replace("__ASC__", "DESC")
+        } else order
+        val cursor = queryProvider(
+            projection = searchProjection(),
+            selection = selection,
+            selectionArgs = args.toTypedArray(),
+            offset = 0,
+            limit = limit,
+            sortOrder = reverseOrder
+        )
+        val matched = if (p.requiresMetadata) cursor.filter { matchesMetadata(it, p) } else cursor
+        return if (before) matched.asReversed() else matched
+    }
+
+    private fun searchProjection() = arrayOf(
+        MediaStore.Files.FileColumns._ID,
+        MediaStore.Files.FileColumns.DISPLAY_NAME,
+        MediaStore.Files.FileColumns.DATA,
+        MediaStore.Files.FileColumns.SIZE,
+        MediaStore.Files.FileColumns.DATE_ADDED,
+        MediaStore.Files.FileColumns.MIME_TYPE,
+        MediaStore.Files.FileColumns.MEDIA_TYPE,
+        MediaStore.Files.FileColumns.DURATION,
+        MediaStore.Files.FileColumns.WIDTH,
+        MediaStore.Files.FileColumns.HEIGHT,
+        MediaStore.Files.FileColumns.BUCKET_ID,
+        MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+    )
+
     override suspend fun load(params: LoadParams<Int>): LoadResult<Int, MediaItem> {
         val offset = params.key ?: 0
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
