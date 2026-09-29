@@ -18,7 +18,7 @@ class MediaArchitectureTest {
         size: Long = 100L
     ) = MediaItem(
         id = id,
-        uri = Uri.parse("content://media/external/images/media/$id"),
+        uri = Uri.EMPTY,
         name = name,
         path = "/Pictures/$name",
         size = size,
