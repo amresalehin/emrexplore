@@ -90,21 +90,7 @@ class MediaSearchPagingSource(
     ): MediaViewerWindow {
         val active = resolveParsed()
         if (favoritesOnly || active.favoritesOnly) {
-            val pager = FavoriteMediaPagingSource(appContext, sort)
-            val position = pager.positionOf(item)
-            val start = (position - radius).coerceAtLeast(0)
-            return when (val result = pager.load(
-                PagingSource.LoadParams.Refresh(
-                    start,
-                    radius * 2 + 1,
-                    false
-                )
-            )) {
-                is PagingSource.LoadResult.Page ->
-                    MediaViewerWindow(start, result.data, totalCount())
-                is PagingSource.LoadResult.Error -> throw result.throwable
-                is PagingSource.LoadResult.Invalid -> MediaViewerWindow(start, emptyList(), 0)
-            }
+            return FavoriteMediaPagingSource(appContext, sort).loadViewerWindowAround(item, radius)
         }
 
         val position = positionOf(item)
