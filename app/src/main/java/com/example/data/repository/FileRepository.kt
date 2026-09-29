@@ -864,8 +864,6 @@ class FileRepository(private val context: Context) {
             )
         }
 
-        /* removed bounded folder cache */ = allItems
-
         if (entitiesToBatch.isNotEmpty()) {
             try {
                 fileIndexDao.insertAll(entitiesToBatch)
