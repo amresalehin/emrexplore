@@ -154,7 +154,6 @@ class MediaSearchPagingSource(
             projection = searchProjection(),
             selection = selection,
             selectionArgs = args.toTypedArray(),
-            offset = 0,
             limit = limit,
             sortOrder = reverseOrder
         )
@@ -447,24 +446,10 @@ class MediaSearchPagingSource(
         return state.closestItemToPosition(anchor)?.let { MediaCursor.from(it, sort) }
     }
     companion object {
-        }
-}
-
-private data class QueryPage(
-    val rows: List<MediaItem>,
-    val consumed: Int,
-    val exhausted: Boolean
-)
-
-private fun GallerySortOption.order(reverse: Boolean = false): String {
-    fun dir(ascending: Boolean): String = if (if (reverse) !ascending else ascending) "ASC" else "DESC"
-    return when (this) {
-        GallerySortOption.DATE_DESC -> "${MediaStore.Files.FileColumns.DATE_ADDED} ${dir(false)}, ${MediaStore.Files.FileColumns._ID} ${dir(false)}"
-        GallerySortOption.DATE_ASC -> "${MediaStore.Files.FileColumns.DATE_ADDED} ${dir(true)}, ${MediaStore.Files.FileColumns._ID} ${dir(true)}"
-        GallerySortOption.NAME_ASC -> "${MediaStore.Files.FileColumns.DISPLAY_NAME} COLLATE NOCASE ${dir(true)}, ${MediaStore.Files.FileColumns._ID} ${dir(true)}"
-        GallerySortOption.NAME_DESC -> "${MediaStore.Files.FileColumns.DISPLAY_NAME} COLLATE NOCASE ${dir(false)}, ${MediaStore.Files.FileColumns._ID} ${dir(false)}"
-        GallerySortOption.SIZE_DESC -> "${MediaStore.Files.FileColumns.SIZE} ${dir(false)}, ${MediaStore.Files.FileColumns._ID} ${dir(false)}"
-        GallerySortOption.SIZE_ASC -> "${MediaStore.Files.FileColumns.SIZE} ${dir(true)}, ${MediaStore.Files.FileColumns._ID} ${dir(true)}"
+        private const val METADATA_SCAN_MULTIPLIER = 4
+        private const val MAX_METADATA_SCAN_SIZE =
+            MediaStorePagingSource.MAX_PAGE_SIZE * METADATA_SCAN_MULTIPLIER
+        private const val MAX_METADATA_ITERATIONS = 3
     }
 }
 
