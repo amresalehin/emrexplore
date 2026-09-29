@@ -79,23 +79,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Size Coil's memory cache from the device memory class instead of a fixed
-        // percentage that can become excessive on low-RAM phones.
-        val memoryClassMb = (getSystemService(ActivityManager::class.java)?.memoryClass ?: 256)
-        val memoryCachePercent = when {
-            memoryClassMb <= 256 -> 0.12
-            memoryClassMb <= 512 -> 0.18
-            memoryClassMb <= 1024 -> 0.22
-            else -> 0.25
-        }
-
+        // Configure Coil ImageLoader for high-performance lazy loading without scroll stutter
+        val memoryClassBytes =
+            (getSystemService(ACTIVITY_SERVICE) as ActivityManager).memoryClass.toLong() * 1024L * 1024L
+        val memoryCacheBytes = minOf(memoryClassBytes / 5L, 96L * 1024L * 1024L)
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
             }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(memoryCachePercent)
+                    .maxSizeBytes(memoryCacheBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                     .build()
             }
             .diskCache {
@@ -128,7 +122,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
 
     var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
     var showAllFilesDialog by rememberSaveable {
-        mutableStateOf(!isAllFilesAccessGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        mutableStateOf(false)
     }
 
     var mediaLocationGranted by remember {
@@ -178,12 +172,11 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
         }
     }
 
-    // Permission requests are feature-driven from the visible permission banner/dialog.
-    // We deliberately do not launch two permission surfaces on first frame.
-
+    // Permissions are requested from the contextual banner instead of automatically
+    // stacking a runtime dialog with the All Files Access settings flow.
     // Reactively refresh data when permissions are newly granted
-    LaunchedEffect(storagePermissionsState.allPermissionsGranted) {
-        if (storagePermissionsState.allPermissionsGranted && uiState.files.isEmpty()) {
+    LaunchedEffect(storagePermissionsState.allPermissionsGranted, allFilesAccessGranted) {
+        if (storagePermissionsState.allPermissionsGranted || allFilesAccessGranted) {
             viewModel.onPermissionsGranted()
         }
     }
@@ -331,17 +324,17 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     // --- Overlay In-App Viewers & Modals ---
 
     // 1. Fullscreen Media Viewer
-    uiState.fullscreenWindow?.let { viewerWindow ->
-        FullscreenMediaViewer(
-            mediaList = viewerWindow.items,
-            currentIndex = viewerWindow.currentIndex,
-            windowStartIndex = viewerWindow.startIndex,
-            totalCount = viewerWindow.totalCount.coerceAtLeast(viewerWindow.items.size),
+    if (uiState.fullscreenMediaIndex != null) {
+        uiState.fullscreenViewerWindow?.let { viewerWindow ->
+            FullscreenMediaViewer(
+                viewerWindow = viewerWindow,
+                currentIndex = uiState.fullscreenMediaIndex ?: viewerWindow.startIndex,
             onClose = { viewModel.closeFullscreenMedia() },
             onIndexChange = { newIdx -> viewModel.moveFullscreenMedia(newIdx) },
             onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) },
             onInspectMetadata = { mediaItem -> viewModel.inspectMetadata(mediaItem) }
-        )
+            )
+        }
     }
 
     // 2. In-App Text File Editor

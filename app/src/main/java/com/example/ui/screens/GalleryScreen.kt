@@ -397,12 +397,15 @@ fun GalleryScreen(
                     onItemClick = { item ->
                         if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                         else {
-                            val loaded = albumItems.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
-                            viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
+                            viewModel.openFullscreenMedia(
+                                item = item,
+                                source = FullscreenMediaSource.ALBUM,
+                                albumId = selectedAlbumId
+                            )
                         }
                     },
                     onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
-                    selectedUris = uiState.gallerySelection
+                    selectedKeys = uiState.gallerySelection
                 )
             }
         } else {
@@ -415,11 +418,9 @@ fun GalleryScreen(
                         onItemClick = { item ->
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                             else {
-                            val loaded = pagedMedia.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
                             viewModel.openFullscreenMedia(
-                                item,
-                                loaded,
-                                if (uiState.gallerySearchQuery.isNotBlank()) {
+                                item = item,
+                                source = if (uiState.gallerySearchQuery.isNotBlank()) {
                                     FullscreenMediaSource.SEARCH
                                 } else {
                                     when (uiState.galleryFilter) {
@@ -433,7 +434,7 @@ fun GalleryScreen(
                             }
                         },
                         onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
-                        selectedUris = uiState.gallerySelection
+                        selectedKeys = uiState.gallerySelection
                     )
                 }
                 GallerySubTab.ALBUMS -> {
@@ -511,7 +512,7 @@ private fun PagedMediaGrid(
     columns: Int,
     onItemClick: (MediaItem) -> Unit,
     onItemLongClick: (MediaItem) -> Unit = {},
-    selectedUris: Set<String> = emptySet()
+    selectedKeys: Set<String> = emptySet()
 ) {
     LazyVerticalGrid(
         state = gridState,
@@ -563,7 +564,7 @@ private fun PagedMediaGrid(
                         item = item,
                         onClick = { onItemClick(item) },
                         onLongClick = { onItemLongClick(item) },
-                        selected = item.uri.toString() in selectedUris
+                        selected = item.uri.toString() in selectedKeys
                     )
                 }
                 null -> {

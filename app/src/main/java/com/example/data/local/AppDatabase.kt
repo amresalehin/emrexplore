@@ -38,9 +38,13 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE favorites ADD COLUMN size INTEGER NOT NULL DEFAULT 0")
                 database.execSQL("ALTER TABLE favorites ADD COLUMN lastModified INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_lastModified ON favorites(lastModified)")
-                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_name ON favorites(name)")
+                database.execSQL("ALTER TABLE favorites ADD COLUMN mediaUri TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE favorites ADD COLUMN mediaDateAdded INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE favorites ADD COLUMN mediaSize INTEGER NOT NULL DEFAULT 0")
                 database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_size ON favorites(size)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_lastModified ON favorites(lastModified)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_mediaDateAdded ON favorites(mediaDateAdded)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_mediaSize ON favorites(mediaSize)")
             }
         }
 
@@ -53,8 +57,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "fossify_files.db"
-                ).addMigrations(MIGRATION_3_4)
-                 .fallbackToDestructiveMigrationOnDowngrade()
+                )
+                    .addMigrations(MIGRATION_3_4)
+                    .fallbackToDestructiveMigrationOnDowngrade()
                  .build()
                 INSTANCE = instance
                 instance

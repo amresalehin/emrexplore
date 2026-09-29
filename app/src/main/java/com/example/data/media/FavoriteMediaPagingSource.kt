@@ -15,36 +15,65 @@ import com.example.data.model.MediaItem
 import com.example.ui.viewmodel.GallerySortOption
 import kotlinx.coroutines.CancellationException
 
+/** Stable Room ordering cursor; paging is independent of absolute row offsets. */
 data class FavoriteCursor(
-    val name: String,
-    val size: Long,
-    val lastModified: Long,
+    val longValue: Long = 0L,
+    val textValue: String = "",
     val path: String
 ) {
     companion object {
-        fun from(item: FavoriteEntity) = FavoriteCursor(item.name, item.size, item.lastModified, item.path)
+        fun from(entity: FavoriteEntity, sort: GallerySortOption): FavoriteCursor = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                FavoriteCursor(longValue = entity.mediaDateAdded, path = entity.path)
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                FavoriteCursor(textValue = entity.name, path = entity.path)
+            GallerySortOption.SIZE_DESC, GallerySortOption.SIZE_ASC ->
+                FavoriteCursor(longValue = entity.mediaSize, path = entity.path)
+        }
+
+        fun from(item: MediaItem, sort: GallerySortOption): FavoriteCursor = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                FavoriteCursor(longValue = item.dateAdded, path = item.path)
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                FavoriteCursor(textValue = item.name, path = item.path)
+            GallerySortOption.SIZE_DESC, GallerySortOption.SIZE_ASC ->
+                FavoriteCursor(longValue = item.size, path = item.path)
+        }
     }
 }
 
+/**
+ * Bounded favorite paging: Room supplies only one page of favorite identities,
+ * then MediaStore resolves only those identities. No full favorite set is loaded.
+ */
 class FavoriteMediaPagingSource(
     context: Context,
     private val sort: GallerySortOption = GallerySortOption.DATE_DESC
 ) : PagingSource<FavoriteCursor, MediaItem>() {
+
     private val appContext = context.applicationContext
     private val resolver: ContentResolver = appContext.contentResolver
     private val favoriteDao = AppDatabase.getDatabase(appContext).favoriteDao()
 
+
     override suspend fun load(params: LoadParams<FavoriteCursor>): LoadResult<FavoriteCursor, MediaItem> {
+        val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
         return try {
-            if (params is LoadParams.Prepend) return LoadResult.Page(emptyList(), null, null)
-            val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
-            val cursor = (params as? LoadParams.Append)?.key
-            val entities = if (cursor == null) initial(limit + 1) else after(cursor, limit + 1)
-            val extra = entities.size > limit
-            val pageEntities = if (extra) entities.take(limit) else entities
-            val page = queryMedia(pageEntities)
-            val next = if (extra && pageEntities.isNotEmpty()) FavoriteCursor.from(pageEntities.last()) else null
-            LoadResult.Page(page, null, next)
+            val prepend = params is LoadParams.Prepend
+            val entities = if (prepend) loadBefore(params.key, limit + 1) else loadAfter(params.key, limit + 1)
+            if (entities.isEmpty()) return LoadResult.Page(emptyList(), null, null)
+            val hasMore = entities.size > limit
+            val pageEntities = entities.take(limit)
+            val rows = queryMediaForFavorites(pageEntities)
+            val byPath = rows.associateBy { it.path }
+            val page = pageEntities.mapNotNull { byPath[it.path]?.copy(isFavorite = true) }
+            val firstCursor = FavoriteCursor.from(pageEntities.first(), sort)
+            val lastCursor = FavoriteCursor.from(pageEntities.last(), sort)
+            LoadResult.Page(
+                data = if (prepend) page.asReversed() else page,
+                prevKey = if (prepend && hasMore) firstCursor else null,
+                nextKey = if (!prepend && hasMore) lastCursor else null
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
@@ -52,115 +81,185 @@ class FavoriteMediaPagingSource(
         }
     }
 
-    private suspend fun initial(limit: Int): List<FavoriteEntity> = when (sort) {
-        GallerySortOption.DATE_DESC -> favoriteDao.getFavoritesDateDesc(limit)
-        GallerySortOption.DATE_ASC -> favoriteDao.getFavoritesDateAsc(limit)
-        GallerySortOption.NAME_ASC -> favoriteDao.getFavoritesNameAsc(limit)
-        GallerySortOption.NAME_DESC -> favoriteDao.getFavoritesNameDesc(limit)
-        GallerySortOption.SIZE_DESC -> favoriteDao.getFavoritesSizeDesc(limit)
-        GallerySortOption.SIZE_ASC -> favoriteDao.getFavoritesSizeAsc(limit)
+    suspend fun positionOf(item: MediaItem): Int = when (sort) {
+        GallerySortOption.DATE_DESC ->
+            favoriteDao.countFavoriteDateDescBefore(item.dateAdded, item.path)
+        GallerySortOption.DATE_ASC ->
+            favoriteDao.countFavoriteDateAscBefore(item.dateAdded, item.path)
+        GallerySortOption.NAME_ASC ->
+            favoriteDao.countFavoriteNameAscBefore(item.name, item.path)
+        GallerySortOption.NAME_DESC ->
+            favoriteDao.countFavoriteNameDescBefore(item.name, item.path)
+        GallerySortOption.SIZE_DESC ->
+            favoriteDao.countFavoriteSizeDescBefore(item.size, item.path)
+        GallerySortOption.SIZE_ASC ->
+            favoriteDao.countFavoriteSizeAscBefore(item.size, item.path)
     }
 
-    private suspend fun after(c: FavoriteCursor, limit: Int): List<FavoriteEntity> = when (sort) {
-        GallerySortOption.DATE_DESC -> favoriteDao.getFavoritesDateDescAfter(c.lastModified, c.path, limit)
-        GallerySortOption.DATE_ASC -> favoriteDao.getFavoritesDateAscAfter(c.lastModified, c.path, limit)
-        GallerySortOption.NAME_ASC -> favoriteDao.getFavoritesNameAscAfter(c.name, c.path, limit)
-        GallerySortOption.NAME_DESC -> favoriteDao.getFavoritesNameDescAfter(c.name, c.path, limit)
-        GallerySortOption.SIZE_DESC -> favoriteDao.getFavoritesSizeDescAfter(c.size, c.path, limit)
-        GallerySortOption.SIZE_ASC -> favoriteDao.getFavoritesSizeAscAfter(c.size, c.path, limit)
+    private suspend fun loadAfter(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> = when (sort) {
+        GallerySortOption.DATE_DESC -> if (cursor == null) favoriteDao.getDateDescFirst(limit) else favoriteDao.getDateDescAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.DATE_ASC -> if (cursor == null) favoriteDao.getDateAscFirst(limit) else favoriteDao.getDateAscAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.NAME_ASC -> if (cursor == null) favoriteDao.getNameAscFirst(limit) else favoriteDao.getNameAscAfter(cursor.textValue, cursor.path, limit)
+        GallerySortOption.NAME_DESC -> if (cursor == null) favoriteDao.getNameDescFirst(limit) else favoriteDao.getNameDescAfter(cursor.textValue, cursor.path, limit)
+        GallerySortOption.SIZE_DESC -> if (cursor == null) favoriteDao.getSizeDescFirst(limit) else favoriteDao.getSizeDescAfter(cursor.longValue, cursor.path, limit)
+        GallerySortOption.SIZE_ASC -> if (cursor == null) favoriteDao.getSizeAscFirst(limit) else favoriteDao.getSizeAscAfter(cursor.longValue, cursor.path, limit)
     }
 
-    suspend fun positionOf(item: MediaItem): Int {
-        val e = favoriteDao.getFavorite(item.path) ?: return 0
-        return when (sort) {
-            GallerySortOption.DATE_DESC -> favoriteDao.countDateDescBefore(e.lastModified, e.path)
-            GallerySortOption.DATE_ASC -> favoriteDao.countDateAscBefore(e.lastModified, e.path)
-            GallerySortOption.NAME_ASC -> favoriteDao.countNameAscBefore(e.name, e.path)
-            GallerySortOption.NAME_DESC -> favoriteDao.countNameDescBefore(e.name, e.path)
-            GallerySortOption.SIZE_DESC -> favoriteDao.countSizeDescBefore(e.size, e.path)
-            GallerySortOption.SIZE_ASC -> favoriteDao.countSizeAscBefore(e.size, e.path)
+    private suspend fun loadBefore(cursor: FavoriteCursor?, limit: Int): List<FavoriteEntity> {
+        val c = requireNotNull(cursor) { "Cursor required for prepend" }
+        val rows = when (sort) {
+            GallerySortOption.DATE_DESC -> favoriteDao.getDateDescBefore(c.longValue, c.path, limit)
+            GallerySortOption.DATE_ASC -> favoriteDao.getDateAscBefore(c.longValue, c.path, limit)
+            GallerySortOption.NAME_ASC -> favoriteDao.getNameAscBefore(c.textValue, c.path, limit)
+            GallerySortOption.NAME_DESC -> favoriteDao.getNameDescBefore(c.textValue, c.path, limit)
+            GallerySortOption.SIZE_DESC -> favoriteDao.getSizeDescBefore(c.longValue, c.path, limit)
+            GallerySortOption.SIZE_ASC -> favoriteDao.getSizeAscBefore(c.longValue, c.path, limit)
         }
+        return rows.asReversed()
     }
 
-    suspend fun loadAround(item: MediaItem, radius: Int = 2): List<MediaItem> {
-        val e = favoriteDao.getFavorite(item.path) ?: return listOf(item)
-        val beforeEntities = when (sort) {
-            GallerySortOption.DATE_DESC -> favoriteDao.getFavoritesDateDescBefore(e.lastModified, e.path, radius)
-            GallerySortOption.DATE_ASC -> favoriteDao.getFavoritesDateAscBefore(e.lastModified, e.path, radius)
-            GallerySortOption.NAME_ASC -> favoriteDao.getFavoritesNameAscBefore(e.name, e.path, radius)
-            GallerySortOption.NAME_DESC -> favoriteDao.getFavoritesNameDescBefore(e.name, e.path, radius)
-            GallerySortOption.SIZE_DESC -> favoriteDao.getFavoritesSizeDescBefore(e.size, e.path, radius)
-            GallerySortOption.SIZE_ASC -> favoriteDao.getFavoritesSizeAscBefore(e.size, e.path, radius)
-        }.asReversed()
-        val afterEntities = after(FavoriteCursor.from(e), radius)
-        return (queryMedia(beforeEntities) + item + queryMedia(afterEntities)).distinctBy { it.uri }
+    suspend fun loadViewerWindowAround(item: MediaItem, radius: Int = 2): MediaViewerWindow {
+        val center = FavoriteCursor.from(item, sort)
+        val before = loadBefore(center, radius)
+        val after = loadAfter(center, radius)
+        val entities = before + listOf(item.toFavoriteEntity()) + after
+        val rows = queryMediaForFavorites(entities)
+        val byPath = rows.associateBy { it.path }
+        val items = entities.mapNotNull { byPath[it.path]?.copy(isFavorite = true) }
+        val position = positionOf(item)
+        return MediaViewerWindow((position - before.size).coerceAtLeast(0), items, favoriteDao.getFavoriteCount())
     }
 
-    private fun queryMedia(entities: List<FavoriteEntity>): List<MediaItem> {
-        if (entities.isEmpty()) return emptyList()
-        val paths = entities.map { it.path }
+    private fun MediaItem.toFavoriteEntity() = FavoriteEntity(
+        path = path,
+        name = name,
+        isDirectory = false,
+        mimeType = mimeType,
+        mediaUri = uri.toString(),
+        mediaDateAdded = dateAdded,
+        mediaSize = size
+    )
+
+
+    internal suspend fun loadSearch(
+        cursor: MediaCursor?,
+        limit: Int,
+        query: ParsedMediaSearch,
+        prepend: Boolean
+    ): QueryPage {
+        val roomCursor = cursor?.let {
+            FavoriteCursor(
+                longValue = it.longValue,
+                textValue = it.textValue,
+                path = it.id.toString()
+            )
+        }
+        val entities = if (prepend) loadBefore(roomCursor, limit * 2) else loadAfter(roomCursor, limit * 2)
+        if (entities.isEmpty()) return QueryPage(emptyList(), 0, true)
+        val rows = queryMediaForFavorites(entities).filter { row ->
+            query.nameTerms.all { term ->
+                row.name.contains(term, true) ||
+                    row.path.contains(term, true) ||
+                    row.bucketName.contains(term, true)
+            }
+        }
+        val bounded = if (prepend) rows.asReversed().take(limit) else rows.take(limit)
+        return QueryPage(
+            rows = bounded,
+            consumed = entities.size,
+            exhausted = entities.size < limit * 2
+        )
+    }
+
+    private fun queryMediaForFavorites(favorites: List<FavoriteEntity>): List<MediaItem> {
+        val paths = favorites.map { it.path }.filter { it.isNotBlank() }
+        if (paths.isEmpty()) return emptyList()
+
+        val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.DISPLAY_NAME,
+            MediaStore.Files.FileColumns.DATA,
+            MediaStore.Files.FileColumns.SIZE,
+            MediaStore.Files.FileColumns.DATE_ADDED,
+            MediaStore.Files.FileColumns.MIME_TYPE,
+            MediaStore.Files.FileColumns.MEDIA_TYPE,
+            MediaStore.Files.FileColumns.DURATION,
+            MediaStore.Files.FileColumns.WIDTH,
+            MediaStore.Files.FileColumns.HEIGHT,
+            MediaStore.Files.FileColumns.BUCKET_ID,
+            MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+        )
         val placeholders = paths.joinToString(",") { "?" }
-        val selection = MediaStore.Files.FileColumns.DATA + " IN ($placeholders) AND " +
+        val selection = MediaStore.Files.FileColumns.DATA + " IN (" + placeholders + ") AND " +
             MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
         val args = paths + listOf(
             MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
             MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
         )
-        val projection = arrayOf(
-            MediaStore.Files.FileColumns._ID, MediaStore.Files.FileColumns.DISPLAY_NAME,
-            MediaStore.Files.FileColumns.DATA, MediaStore.Files.FileColumns.SIZE,
-            MediaStore.Files.FileColumns.DATE_ADDED, MediaStore.Files.FileColumns.MIME_TYPE,
-            MediaStore.Files.FileColumns.MEDIA_TYPE, MediaStore.Files.FileColumns.DURATION,
-            MediaStore.Files.FileColumns.WIDTH, MediaStore.Files.FileColumns.HEIGHT,
-            MediaStore.Files.FileColumns.BUCKET_ID, MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
-        )
         val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val q = Bundle().apply {
+            val queryArgs = Bundle().apply {
                 putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
                 putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
-                putInt(ContentResolver.QUERY_ARG_LIMIT, entities.size)
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, MediaStore.Files.FileColumns.DATA + " ASC")
+                putInt(ContentResolver.QUERY_ARG_LIMIT, paths.size)
             }
-            resolver.query(MediaStore.Files.getContentUri("external"), projection, q, null)
+            resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
         } else {
-            resolver.query(MediaStore.Files.getContentUri("external"), projection, selection, args.toTypedArray(), null)
+            resolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                selection,
+                args.toTypedArray(),
+                MediaStore.Files.FileColumns.DATA + " ASC LIMIT " + paths.size
+            )
         }
-        val found = cursor?.use { readCursor(it) } ?: emptyMap()
-        return entities.mapNotNull { found[it.path] }
+        return cursor?.use(::readCursor) ?: emptyList()
     }
 
-    private fun readCursor(cursor: Cursor): Map<String, MediaItem> {
-        val result = HashMap<String, MediaItem>(cursor.count)
-        val id=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-        val name=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
-        val data=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
-        val size=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
-        val date=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED)
-        val mime=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
-        val type=cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
-        val duration=cursor.getColumnIndex(MediaStore.Files.FileColumns.DURATION)
-        val width=cursor.getColumnIndex(MediaStore.Files.FileColumns.WIDTH)
-        val height=cursor.getColumnIndex(MediaStore.Files.FileColumns.HEIGHT)
-        val bid=cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
-        val bname=cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
-        while(cursor.moveToNext()){
-            val rowId=cursor.getLong(id)
-            val isVideo=cursor.getInt(type)==MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-            val path=cursor.getString(data) ?: continue
-            val uri=if(isVideo) ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,rowId) else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,rowId)
-            result[path]=MediaItem(
-                id=rowId, uri=uri, name=cursor.getString(name) ?: path.substringAfterLast('/'),
-                path=path, size=cursor.getLong(size), dateAdded=cursor.getLong(date)*1000L,
-                mimeType=cursor.getString(mime) ?: if(isVideo) "video/*" else "image/*",
-                duration=if(duration>=0&&!cursor.isNull(duration))cursor.getLong(duration) else 0L,
-                width=if(width>=0&&!cursor.isNull(width))cursor.getInt(width) else 0,
-                height=if(height>=0&&!cursor.isNull(height))cursor.getInt(height) else 0,
-                bucketId=if(bid>=0)cursor.getString(bid)?:"" else "",
-                bucketName=if(bname>=0)cursor.getString(bname)?:"" else "",
-                isVideo=isVideo,isFavorite=true
+    private fun readCursor(cursor: Cursor): List<MediaItem> {
+        val result = ArrayList<MediaItem>(cursor.count.coerceAtMost(MediaStorePagingSource.MAX_PAGE_SIZE))
+        val id = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
+        val name = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
+        val data = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATA)
+        val size = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)
+        val date = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED)
+        val mime = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
+        val type = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
+        val duration = cursor.getColumnIndex(MediaStore.Files.FileColumns.DURATION)
+        val width = cursor.getColumnIndex(MediaStore.Files.FileColumns.WIDTH)
+        val height = cursor.getColumnIndex(MediaStore.Files.FileColumns.HEIGHT)
+        val bucketId = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
+        val bucketName = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
+
+        while (cursor.moveToNext()) {
+            val rowId = cursor.getLong(id)
+            val isVideo = cursor.getInt(type) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+            val uri = if (isVideo) {
+                ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId)
+            } else {
+                ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
+            }
+            result += MediaItem(
+                id = rowId,
+                uri = uri,
+                name = cursor.getString(name) ?: "Media_$rowId",
+                path = cursor.getString(data) ?: "",
+                size = cursor.getLong(size),
+                dateAdded = cursor.getLong(date) * 1000L,
+                mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*",
+                duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L,
+                width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0,
+                height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0,
+                bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "",
+                bucketName = if (bucketName >= 0) cursor.getString(bucketName) ?: "" else "",
+                isVideo = isVideo
             )
         }
         return result
     }
 
-    override fun getRefreshKey(state: PagingState<FavoriteCursor, MediaItem>): FavoriteCursor? = null
+    override fun getRefreshKey(state: PagingState<FavoriteCursor, MediaItem>): FavoriteCursor? {
+        val anchor = state.anchorPosition ?: return null
+        return state.closestItemToPosition(anchor)?.let { FavoriteCursor.from(it, sort) }
+    }
 }

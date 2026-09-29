@@ -36,6 +36,11 @@ data class FileItem(
         get() = extension.lowercase() in listOf("txt", "md", "json", "xml", "html", "kt", "java", "py", "csv", "log", "properties", "yaml", "yml", "gradle")
 }
 
+@JvmInline
+value class MediaIdentity(val value: String) {
+    override fun toString(): String = value
+}
+
 data class MediaItem(
     val id: Long,
     val uri: Uri,
@@ -51,7 +56,11 @@ data class MediaItem(
     val bucketName: String = "",
     val isVideo: Boolean = false,
     val isFavorite: Boolean = false
-)
+) {
+    /** Canonical domain identity. Do not use the raw MediaStore row id as a cross-type key. */
+    val identity: MediaIdentity
+        get() = MediaIdentity(uri.toString())
+}
 
 data class MediaAlbum(
     val id: String,
