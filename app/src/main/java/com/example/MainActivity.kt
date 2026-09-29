@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -78,14 +79,23 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Configure Coil ImageLoader for high-performance lazy loading without scroll stutter
+        // Size Coil's memory cache from the device memory class instead of a fixed
+        // percentage that can become excessive on low-RAM phones.
+        val memoryClassMb = (getSystemService(ActivityManager::class.java)?.memoryClass ?: 256)
+        val memoryCachePercent = when {
+            memoryClassMb <= 256 -> 0.12
+            memoryClassMb <= 512 -> 0.18
+            memoryClassMb <= 1024 -> 0.22
+            else -> 0.25
+        }
+
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
             }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(0.30)
+                    .maxSizePercent(memoryCachePercent)
                     .build()
             }
             .diskCache {
