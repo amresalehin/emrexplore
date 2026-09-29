@@ -85,7 +85,7 @@ class MainActivity : ComponentActivity() {
             }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(0.30)
+                    .maxSizePercent(0.20)
                     .build()
             }
             .diskCache {
@@ -118,7 +118,7 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
 
     var allFilesAccessGranted by remember { mutableStateOf(isAllFilesAccessGranted()) }
     var showAllFilesDialog by rememberSaveable {
-        mutableStateOf(!isAllFilesAccessGranted() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        mutableStateOf(false)
     }
 
     var mediaLocationGranted by remember {
@@ -168,16 +168,11 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
         }
     }
 
-    // Auto-prompt permissions on initial start if not granted
-    LaunchedEffect(Unit) {
-        if (!storagePermissionsState.allPermissionsGranted) {
-            storagePermissionsState.launchMultiplePermissionRequest()
-        }
-    }
-
+    // Permissions are requested from the contextual banner instead of automatically
+    // stacking a runtime dialog with the All Files Access settings flow.
     // Reactively refresh data when permissions are newly granted
-    LaunchedEffect(storagePermissionsState.allPermissionsGranted) {
-        if (storagePermissionsState.allPermissionsGranted && uiState.files.isEmpty()) {
+    LaunchedEffect(storagePermissionsState.allPermissionsGranted, allFilesAccessGranted) {
+        if (storagePermissionsState.allPermissionsGranted || allFilesAccessGranted) {
             viewModel.onPermissionsGranted()
         }
     }
