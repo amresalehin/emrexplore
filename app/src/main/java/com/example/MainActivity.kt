@@ -168,12 +168,8 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
         }
     }
 
-    // Auto-prompt permissions on initial start if not granted
-    LaunchedEffect(Unit) {
-        if (!storagePermissionsState.allPermissionsGranted) {
-            storagePermissionsState.launchMultiplePermissionRequest()
-        }
-    }
+    // Permission requests are feature-driven from the visible permission banner/dialog.
+    // We deliberately do not launch two permission surfaces on first frame.
 
     // Reactively refresh data when permissions are newly granted
     LaunchedEffect(storagePermissionsState.allPermissionsGranted) {
