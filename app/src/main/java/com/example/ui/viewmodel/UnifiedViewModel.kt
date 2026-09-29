@@ -1564,5 +1564,6 @@ private fun MediaItem.toFileItem(): FileItem = FileItem(
     lastModified = dateAdded,
     isDirectory = false,
     mimeType = mimeType,
-    isFavorite = isFavorite
+    isFavorite = isFavorite,
+    uri = uri
 )
