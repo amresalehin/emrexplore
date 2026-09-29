@@ -116,12 +116,10 @@ class MediaRepository(context: Context) {
 
     suspend fun viewerPosition(item: com.example.data.model.MediaItem, source: FullscreenMediaSource, albumId: String? = null, sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC): Int {
         if (source == FullscreenMediaSource.FAVORITES) {
-            val dao = com.example.data.local.AppDatabase.getDatabase(appContext).favoriteDao()
-            val timestamp = dao.getFavoriteTimestamp(item.path) ?: return 0
-            return dao.countFavoritesBefore(timestamp, item.path)
+            return FavoriteMediaPagingSource(appContext, sort).positionOf(item)
         }
         val resolver = appContext.contentResolver
-        val rawId = if (item.isVideo) item.id - 1_000_000L else item.id
+        val rawId = item.id
         val mediaType = if (item.isVideo) MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO else MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE
         val typeSelection = when (source) {
             FullscreenMediaSource.ALL -> MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
