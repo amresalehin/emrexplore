@@ -17,8 +17,6 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
     suspend fun isFavoriteSync(path: String): Boolean
 
-    @Query("SELECT path FROM favorites")
-    suspend fun getAllFavoritePathsSync(): List<String>
 
     @Query("SELECT path FROM favorites WHERE path IN (:paths)")
     suspend fun getFavoritePathsForPaths(paths: List<String>): List<String>
