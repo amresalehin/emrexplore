@@ -127,9 +127,7 @@ data class UiState(
 
     // Viewers & Modals
     val fullscreenMediaIndex: Int? = null,
-    val fullscreenMediaList: List<MediaItem> = emptyList(),
-    val fullscreenWindowStartIndex: Int = 0,
-    val fullscreenTotalCount: Int = 0,
+    val fullscreenViewerWindow: MediaViewerWindow? = null,
     val fullscreenSource: FullscreenMediaSource? = null,
     val fullscreenAlbumId: String? = null,
     val fullscreenSearchQuery: String = "",
@@ -1107,9 +1105,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = fallbackIndex,
-                fullscreenMediaList = listOf(item),
-                fullscreenWindowStartIndex = fallbackIndex,
-                fullscreenTotalCount = list.size,
+                fullscreenViewerWindow = MediaViewerWindow(fallbackIndex, listOf(item), list.size),
                 fullscreenSource = source,
                 fullscreenAlbumId = albumId,
                 fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchSubmittedQuery else "",
@@ -1137,9 +1133,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     _uiState.update {
                         it.copy(
                             fullscreenMediaIndex = window.startIndex,
-                            fullscreenMediaList = window.items,
-                            fullscreenWindowStartIndex = window.startIndex,
-                            fullscreenTotalCount = window.totalCount,
+                            fullscreenViewerWindow = window,
                             fullscreenLoading = false
                         )
                     }
@@ -1157,9 +1151,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.update {
                     it.copy(
                         fullscreenMediaIndex = absoluteIndex,
-                        fullscreenMediaList = window.items,
-                        fullscreenWindowStartIndex = window.startIndex,
-                        fullscreenTotalCount = window.totalCount,
+                        fullscreenViewerWindow = window,
                         fullscreenLoading = false
                     )
                 }
@@ -1175,9 +1167,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = 0,
-                fullscreenMediaList = listOf(item),
-                fullscreenWindowStartIndex = 0,
-                fullscreenTotalCount = 1,
+                fullscreenViewerWindow = MediaViewerWindow(0, listOf(item), 1),
                 fullscreenSource = null,
                 fullscreenAlbumId = null,
                 fullscreenSearchQuery = "",
@@ -1193,9 +1183,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         _uiState.update {
             it.copy(
                 fullscreenMediaIndex = null,
-                fullscreenMediaList = emptyList(),
-                fullscreenWindowStartIndex = 0,
-                fullscreenTotalCount = 0,
+                fullscreenViewerWindow = null,
                 fullscreenSource = null,
                 fullscreenAlbumId = null,
                 fullscreenLoading = false
@@ -1206,9 +1194,10 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     fun moveFullscreenMedia(targetIndex: Int) {
         val state = _uiState.value
         val source = state.fullscreenSource ?: return
-        val total = state.fullscreenTotalCount
+        val viewerWindow = state.fullscreenViewerWindow ?: return
+        val total = viewerWindow.totalCount
         if (targetIndex !in 0 until total || state.fullscreenLoading) return
-        if (targetIndex in state.fullscreenWindowStartIndex until (state.fullscreenWindowStartIndex + state.fullscreenMediaList.size)) {
+        if (targetIndex in viewerWindow.startIndex until (viewerWindow.startIndex + viewerWindow.items.size)) {
             _uiState.update { it.copy(fullscreenMediaIndex = targetIndex) }
             return
         }
@@ -1223,9 +1212,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         else -> MediaFilter.ALL
                     }
                     val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
-                        state.fullscreenMediaList.firstOrNull()
+                        viewerWindow.items.firstOrNull()
                     } else {
-                        state.fullscreenMediaList.lastOrNull()
+                        viewerWindow.items.lastOrNull()
                     } ?: run {
                         _uiState.update { it.copy(fullscreenLoading = false) }
                         return@launch
@@ -1241,9 +1230,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     )
                     _uiState.update {
                         it.copy(
-                            fullscreenMediaList = window.items,
-                            fullscreenWindowStartIndex = window.startIndex,
-                            fullscreenTotalCount = window.totalCount,
+                            fullscreenViewerWindow = window,
                             fullscreenMediaIndex = targetIndex,
                             fullscreenLoading = false
                         )
@@ -1265,9 +1252,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 )
                 _uiState.update {
                     it.copy(
-                        fullscreenMediaList = window.items,
-                        fullscreenWindowStartIndex = window.startIndex,
-                        fullscreenTotalCount = window.totalCount,
+                        fullscreenViewerWindow = window,
                         fullscreenMediaIndex = targetIndex,
                         fullscreenLoading = false
                     )
