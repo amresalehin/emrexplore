@@ -1238,7 +1238,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                     return@launch
                 }
 
-                val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
+                val anchor = if (targetIndex < viewerWindow.startIndex) {
                     viewerWindow.items.firstOrNull()
                 } else {
                     viewerWindow.items.lastOrNull()
@@ -1538,9 +1538,14 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
 
             _uiState.update { state ->
-                state.copy(fullscreenMediaList = state.fullscreenMediaList.map { media ->
-                    if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
-                })
+                val window = state.fullscreenViewerWindow
+                if (window == null) state else state.copy(
+                    fullscreenViewerWindow = window.copy(
+                        items = window.items.map { media ->
+                            if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+                        }
+                    )
+                )
             }
             loadFiles()
             refreshGallery()
