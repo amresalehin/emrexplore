@@ -107,7 +107,7 @@ class MediaStoreAlbumPagingSource(
                 ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
             }
             result += MediaItem(
-                id = if (isVideo) rowId + 1_000_000L else rowId,
+                id = rowId,
                 uri = uri,
                 name = cursor.getString(name) ?: "Media_$rowId",
                 path = if (data >= 0) cursor.getString(data) ?: "" else "",
