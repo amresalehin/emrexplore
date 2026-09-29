@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
@@ -98,7 +103,9 @@ fun GallerySearchScreen(
                     onValueChange = viewModel::setGallerySearchQuery,
                     modifier = Modifier.weight(1f),
                     singleLine = true,
-                    placeholder = { Text("Search collection") },
+                    placeholder = { Text("Search photos, camera, date, GPS, tags…") },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { viewModel.submitGallerySearch() }),
                     trailingIcon = {
                         if (uiState.gallerySearchQuery.isNotBlank()) {
                             IconButton(onClick = viewModel::clearGallerySearch) {
@@ -122,15 +129,37 @@ fun GallerySearchScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 item {
+                    SearchSection(title = "QUICK SEARCH") {
+                        HorizontalChips {
+                            listOf(
+                                "Screenshots" to "screenshot",
+                                "Camera" to "camera:",
+                                "Wallpapers" to "wallpaper",
+                                "GIFs" to "gif",
+                                "GPS" to "gps:true",
+                                "Year" to "year:"
+                            ).forEach { (label, token) ->
+                                SearchChip(label = label, icon = Icons.Default.Search, onClick = { viewModel.addGallerySearchTerm(token) })
+                            }
+                        }
+                    }
+                }
+
+                item {
                     val q = uiState.gallerySearchQuery.trim()
                     if (q.isNotBlank()) {
                         SearchSection {
-                            SearchChip(
-                                label = q,
-                                icon = Icons.Default.Search,
-                                selected = true,
-                                onClick = {}
-                            )
+                            HorizontalChips { SearchChip(label = q, icon = Icons.Default.Search, selected = true, onClick = {}) }
+                        }
+                    }
+                }
+
+                item {
+                    SearchSection(title = "SEARCH SYNTAX") {
+                        Column(modifier = Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text("camera:<model>  •  iso:<number>  •  f:<aperture>", style = MaterialTheme.typography.bodySmall)
+                            Text("gps:true/false  •  year:<YYYY>  •  month:<YYYY-MM>", style = MaterialTheme.typography.bodySmall)
+                            Text("date:<YYYY-MM-DD>  •  near:<place>  •  \"exact phrase\"", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -147,10 +176,17 @@ fun GallerySearchScreen(
                             ) {
                                 HorizontalChips {
                                     uiState.galleryRecentSearches.take(8).forEach { recent ->
-                                        SearchChip(
-                                            label = recent,
-                                            icon = Icons.Default.Search,
-                                            onClick = { viewModel.setGallerySearchQuery(recent) }
+                                        InputChip(
+                                            selected = false,
+                                            onClick = { viewModel.useRecentGallerySearch(recent) },
+                                            label = { Text(recent, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                            trailingIcon = {
+                                                Icon(
+                                                    Icons.Default.Close,
+                                                    contentDescription = "Remove recent search",
+                                                    modifier = Modifier.size(16.dp).clickable { viewModel.removeGalleryRecentSearch(recent) }
+                                                )
+                                            }
                                         )
                                     }
                                 }
