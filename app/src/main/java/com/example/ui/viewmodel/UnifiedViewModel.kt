@@ -107,6 +107,8 @@ data class UiState(
     // Gallery
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
     val galleryFilter: String = "ALL", // ALL, PHOTOS, VIDEOS, FAVORITES
+    val galleryDateFilter: String = "ALL", // ALL, TODAY, LAST_7_DAYS, THIS_MONTH, THIS_YEAR
+    val galleryLocationFilter: String = "ALL", // ALL, WITH_GPS, WITHOUT_GPS
     val gallerySearchQuery: String = "",
     val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
@@ -176,6 +178,8 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
     private val galleryRefreshFlow = MutableStateFlow(0L)
     private val gallerySearchFlow = MutableStateFlow("")
+    private val galleryDateFilterFlow = MutableStateFlow("ALL")
+    private val galleryLocationFilterFlow = MutableStateFlow("ALL")
     private val gallerySortFlow = MutableStateFlow(GallerySortOption.DATE_DESC)
 
     /**
@@ -186,28 +190,53 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         combine(
             galleryFilterFlow,
             gallerySearchFlow.debounce(250).distinctUntilChanged(),
+            galleryDateFilterFlow,
+            galleryLocationFilterFlow,
             galleryRefreshFlow,
             gallerySortFlow
-        ) { filter, query, _, sort ->
-            Triple(filter, query.trim(), sort)
+        ) { filter, query, dateFilter, locationFilter, _, sort ->
+            GalleryQueryState(filter, query.trim(), dateFilter, locationFilter, sort)
         }
-        .flatMapLatest { (filter, query, sort) ->
-            if (filter == null && query.isBlank()) {
-                mediaRepository.favoritesPager(sort)
-            } else if (query.isBlank()) {
-                mediaRepository.pager(filter ?: MediaFilter.ALL, sort)
+        .flatMapLatest { state ->
+            val internalOperators = buildList {
+                when (state.dateFilter) {
+                    "TODAY" -> add("date:" + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
+                    "LAST_7_DAYS" -> add("after:" + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(System.currentTimeMillis() - 6L * 86_400_000L)))
+                    "THIS_MONTH" -> add("month:" + java.text.SimpleDateFormat("yyyy-MM", java.util.Locale.US).format(java.util.Date()))
+                    "THIS_YEAR" -> add("year:" + java.text.SimpleDateFormat("yyyy", java.util.Locale.US).format(java.util.Date()))
+                }
+                when (state.locationFilter) {
+                    "WITH_GPS" -> add("gps:true")
+                    "WITHOUT_GPS" -> add("gps:false")
+                }
+            }
+            val effectiveQuery = (listOf(state.query) + internalOperators)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+            if (state.filter == null && effectiveQuery.isBlank()) {
+                mediaRepository.favoritesPager(state.sort)
+            } else if (effectiveQuery.isBlank()) {
+                mediaRepository.pager(state.filter ?: MediaFilter.ALL, state.sort)
             } else {
                 mediaRepository.searchPager(
-                    query,
-                    filter ?: MediaFilter.ALL,
-                    favoritesOnly = filter == null,
-                    sort = sort
+                    effectiveQuery,
+                    state.filter ?: MediaFilter.ALL,
+                    favoritesOnly = state.filter == null,
+                    sort = state.sort
                 )
             }
         }
         .cachedIn(viewModelScope)
 
-    private val _uiState = MutableStateFlow(UiState())
+        private data class GalleryQueryState(
+        val filter: MediaFilter?,
+        val query: String,
+        val dateFilter: String,
+        val locationFilter: String,
+        val sort: GallerySortOption
+    )
+
+private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
     private var mediaPlayer: MediaPlayer? = null
@@ -970,6 +999,31 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             "VIDEOS" -> galleryFilterFlow.value = MediaFilter.VIDEOS
             "FAVORITES" -> galleryFilterFlow.value = null
         }
+    }
+
+    fun setGalleryDateFilter(filter: String) {
+        val normalized = filter.takeIf { it in setOf("ALL", "TODAY", "LAST_7_DAYS", "THIS_MONTH", "THIS_YEAR") } ?: "ALL"
+        _uiState.update { it.copy(galleryDateFilter = normalized) }
+        galleryDateFilterFlow.value = normalized
+    }
+
+    fun setGalleryLocationFilter(filter: String) {
+        val normalized = filter.takeIf { it in setOf("ALL", "WITH_GPS", "WITHOUT_GPS") } ?: "ALL"
+        _uiState.update { it.copy(galleryLocationFilter = normalized) }
+        galleryLocationFilterFlow.value = normalized
+    }
+
+    fun resetGalleryFilters() {
+        _uiState.update {
+            it.copy(
+                galleryFilter = "ALL",
+                galleryDateFilter = "ALL",
+                galleryLocationFilter = "ALL"
+            )
+        }
+        galleryFilterFlow.value = MediaFilter.ALL
+        galleryDateFilterFlow.value = "ALL"
+        galleryLocationFilterFlow.value = "ALL"
     }
 
     fun selectAlbum(album: MediaAlbum?) {
