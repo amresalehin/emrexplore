@@ -20,8 +20,44 @@ interface FavoriteDao {
     @Query("SELECT path FROM favorites")
     suspend fun getAllFavoritePathsSync(): List<String>
 
-    @Query("SELECT path FROM favorites ORDER BY timestamp DESC, path ASC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
+    @Query("SELECT * FROM favorites ORDER BY lastModified DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesDateDesc(limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites ORDER BY lastModified ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesDateAsc(limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesNameAsc(limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE DESC, path DESC LIMIT :limit")
+    suspend fun getFavoritesNameDesc(limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites ORDER BY size DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesSizeDesc(limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites ORDER BY size ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesSizeAsc(limit: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites WHERE (lastModified < :date OR (lastModified = :date AND path > :path)) ORDER BY lastModified DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesDateDescAfter(date: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (lastModified > :date OR (lastModified = :date AND path < :path)) ORDER BY lastModified ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesDateAscAfter(date: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (name COLLATE NOCASE > :name OR (name COLLATE NOCASE = :name AND path > :path)) ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesNameAscAfter(name: String, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (name COLLATE NOCASE < :name OR (name COLLATE NOCASE = :name AND path < :path)) ORDER BY name COLLATE NOCASE DESC, path DESC LIMIT :limit")
+    suspend fun getFavoritesNameDescAfter(name: String, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (size < :size OR (size = :size AND path > :path)) ORDER BY size DESC, path ASC LIMIT :limit")
+    suspend fun getFavoritesSizeDescAfter(size: Long, path: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (size > :size OR (size = :size AND path < :path)) ORDER BY size ASC, path ASC LIMIT :limit")
+    suspend fun getFavoritesSizeAscAfter(size: Long, path: String, limit: Int): List<FavoriteEntity>
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE lastModified > :date OR (lastModified = :date AND path < :path)")
+    suspend fun countDateDescBefore(date: Long, path: String): Int
+    @Query("SELECT COUNT(*) FROM favorites WHERE lastModified < :date OR (lastModified = :date AND path > :path)")
+    suspend fun countDateAscBefore(date: Long, path: String): Int
+    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE < :name OR (name COLLATE NOCASE = :name AND path < :path)")
+    suspend fun countNameAscBefore(name: String, path: String): Int
+    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE > :name OR (name COLLATE NOCASE = :name AND path > :path)")
+    suspend fun countNameDescBefore(name: String, path: String): Int
+    @Query("SELECT COUNT(*) FROM favorites WHERE size > :size OR (size = :size AND path < :path)")
+    suspend fun countSizeDescBefore(size: Long, path: String): Int
+    @Query("SELECT COUNT(*) FROM favorites WHERE size < :size OR (size = :size AND path > :path)")
+    suspend fun countSizeAscBefore(size: Long, path: String): Int
 
     @Query("SELECT timestamp FROM favorites WHERE path = :path LIMIT 1")
     suspend fun getFavoriteTimestamp(path: String): Long?
