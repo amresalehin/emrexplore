@@ -546,6 +546,7 @@ internal object MediaSearchParser {
         var favoritesOnly = false
         var near: Near? = null
         var locationText: String? = null
+        var locationRadiusKm = 25.0
 
         for (raw in terms) {
             val separator = raw.indexOf(':')
@@ -605,11 +606,16 @@ internal object MediaSearchParser {
                 }
 
                 "near" ->
-                    parseNear(value)?.let { near = it } ?: nameTerms.add(raw)
+                    parseNear(value)?.let {
+                        near = it
+                        locationRadiusKm = it.radiusKm
+                    } ?: nameTerms.add(raw)
 
                 "location" ->
-                    parseNear(value)?.let { near = it }
-                        ?: if (value.isNotBlank()) locationText = value else nameTerms.add(raw)
+                    parseNear(value)?.let {
+                        near = it
+                        locationRadiusKm = it.radiusKm
+                    } ?: if (value.isNotBlank()) locationText = value else nameTerms.add(raw)
 
                 "after" ->
                     parseDate(value)?.let { after = it } ?: nameTerms.add(raw)
@@ -655,7 +661,8 @@ internal object MediaSearchParser {
             favoritesOnly = favoritesOnly,
             near = near,
             exifTerms = exifTerms,
-            locationText = locationText
+            locationText = locationText,
+            locationRadiusKm = locationRadiusKm
         )
     }
 
