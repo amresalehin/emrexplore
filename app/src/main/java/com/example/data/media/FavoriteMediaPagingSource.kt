@@ -55,6 +55,7 @@ class FavoriteMediaPagingSource(
     private val resolver: ContentResolver = appContext.contentResolver
     private val favoriteDao = AppDatabase.getDatabase(appContext).favoriteDao()
 
+
     override suspend fun load(params: LoadParams<FavoriteCursor>): LoadResult<FavoriteCursor, MediaItem> {
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
         return try {
@@ -164,13 +165,11 @@ class FavoriteMediaPagingSource(
             MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
             MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
         )
-        val order = MediaStore.Files.FileColumns.DATA + " ASC"
-
         val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val queryArgs = Bundle().apply {
                 putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
                 putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
-                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, MediaStore.Files.FileColumns.DATA + " ASC")
                 putInt(ContentResolver.QUERY_ARG_LIMIT, paths.size)
             }
             resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
@@ -180,10 +179,9 @@ class FavoriteMediaPagingSource(
                 projection,
                 selection,
                 args.toTypedArray(),
-                order + " LIMIT " + paths.size
+                MediaStore.Files.FileColumns.DATA + " ASC LIMIT " + paths.size
             )
         }
-
         return cursor?.use(::readCursor) ?: emptyList()
     }
 
