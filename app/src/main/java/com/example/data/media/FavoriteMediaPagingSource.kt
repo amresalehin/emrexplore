@@ -140,27 +140,36 @@ class FavoriteMediaPagingSource(
         mediaSize = size
     )
 
-    suspend fun loadViewerWindowAround(item: MediaItem, radius: Int = 2): MediaViewerWindow {
-        val center = FavoriteCursor.from(item, sort)
-        val before = loadBefore(center, radius)
-        val after = loadAfter(center, radius)
-        val entities = before + listOf(item.toFavoriteEntity()) + after
-        val rows = queryMediaForFavorites(entities)
-        val byPath = rows.associateBy { it.path }
-        val items = entities.mapNotNull { byPath[it.path]?.copy(isFavorite = true) }
-        val position = positionOf(item)
-        return MediaViewerWindow((position - before.size).coerceAtLeast(0), items, favoriteDao.getFavoriteCount())
-    }
 
-    private fun MediaItem.toFavoriteEntity() = FavoriteEntity(
-        path = path,
-        name = name,
-        isDirectory = false,
-        mimeType = mimeType,
-        mediaUri = uri.toString(),
-        mediaDateAdded = dateAdded,
-        mediaSize = size
-    )
+    suspend fun loadSearch(
+        cursor: MediaCursor?,
+        limit: Int,
+        query: ParsedMediaSearch,
+        prepend: Boolean
+    ): QueryPage {
+        val roomCursor = cursor?.let {
+            FavoriteCursor(
+                longValue = it.longValue,
+                textValue = it.textValue,
+                path = it.id.toString()
+            )
+        }
+        val entities = if (prepend) loadBefore(roomCursor, limit * 2) else loadAfter(roomCursor, limit * 2)
+        if (entities.isEmpty()) return QueryPage(emptyList(), 0, true)
+        val rows = queryMediaForFavorites(entities).filter { row ->
+            query.nameTerms.all { term ->
+                row.name.contains(term, true) ||
+                    row.path.contains(term, true) ||
+                    row.bucketName.contains(term, true)
+            }
+        }
+        val bounded = if (prepend) rows.asReversed().take(limit) else rows.take(limit)
+        return QueryPage(
+            rows = bounded,
+            consumed = entities.size,
+            exhausted = entities.size < limit * 2
+        )
+    }
 
     private fun queryMediaForFavorites(favorites: List<FavoriteEntity>): List<MediaItem> {
         val paths = favorites.map { it.path }.filter { it.isNotBlank() }
