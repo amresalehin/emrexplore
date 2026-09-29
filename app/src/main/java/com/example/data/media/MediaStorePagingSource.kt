@@ -203,7 +203,10 @@ class MediaStorePagingSource(
         return result
     }
 
-    override fun getRefreshKey(state: PagingState<MediaCursor, MediaItem>): MediaCursor? = null
+    override fun getRefreshKey(state: PagingState<MediaCursor, MediaItem>): MediaCursor? {
+        val anchor = state.anchorPosition ?: return null
+        return state.closestItemToPosition(anchor)?.let { MediaCursor.from(it, sort) }
+    }
 
     companion object {
         const val MIN_PAGE_SIZE = 60
