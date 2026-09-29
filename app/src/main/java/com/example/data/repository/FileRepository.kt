@@ -1846,7 +1846,9 @@ class FileRepository(private val context: Context) {
                     path = fileItem.path,
                     name = fileItem.name,
                     isDirectory = fileItem.isDirectory,
-                    mimeType = fileItem.mimeType
+                    mimeType = fileItem.mimeType,
+                    size = fileItem.size,
+                    lastModified = fileItem.lastModified
                 )
             )
             true
