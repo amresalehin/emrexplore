@@ -325,12 +325,12 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     // --- Overlay In-App Viewers & Modals ---
 
     // 1. Fullscreen Media Viewer
-    if (uiState.fullscreenMediaIndex != null) {
+    uiState.fullscreenWindow?.let { viewerWindow ->
         FullscreenMediaViewer(
-            mediaList = uiState.fullscreenMediaList,
-            currentIndex = uiState.fullscreenMediaIndex ?: 0,
-            windowStartIndex = uiState.fullscreenWindowStartIndex,
-            totalCount = uiState.fullscreenTotalCount.coerceAtLeast(uiState.fullscreenMediaList.size),
+            mediaList = viewerWindow.items,
+            currentIndex = viewerWindow.currentIndex,
+            windowStartIndex = viewerWindow.startIndex,
+            totalCount = viewerWindow.totalCount.coerceAtLeast(viewerWindow.items.size),
             onClose = { viewModel.closeFullscreenMedia() },
             onIndexChange = { newIdx -> viewModel.moveFullscreenMedia(newIdx) },
             onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) },
