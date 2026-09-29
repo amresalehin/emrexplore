@@ -10,68 +10,56 @@ import kotlinx.coroutines.flow.Flow
 interface FavoriteDao {
     @Query("SELECT * FROM favorites ORDER BY timestamp DESC, path ASC")
     fun getAllFavorites(): Flow<List<FavoriteEntity>>
-
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
     fun isFavorite(path: String): Flow<Boolean>
-
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE path = :path)")
     suspend fun isFavoriteSync(path: String): Boolean
-
-
     @Query("SELECT path FROM favorites WHERE path IN (:paths)")
     suspend fun getFavoritePathsForPaths(paths: List<String>): List<String>
-
-    @Query("SELECT path FROM favorites ORDER BY timestamp DESC, path ASC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePathsPage(limit: Int, offset: Int): List<String>
-
-    @Query("SELECT * FROM favorites ORDER BY mediaDateAdded DESC, path DESC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageDateDesc(limit: Int, offset: Int): List<FavoriteEntity>
-
-    @Query("SELECT * FROM favorites ORDER BY mediaDateAdded ASC, path ASC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageDateAsc(limit: Int, offset: Int): List<FavoriteEntity>
-
-    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageNameAsc(limit: Int, offset: Int): List<FavoriteEntity>
-
-    @Query("SELECT * FROM favorites ORDER BY name COLLATE NOCASE DESC, path DESC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageNameDesc(limit: Int, offset: Int): List<FavoriteEntity>
-
-    @Query("SELECT * FROM favorites ORDER BY mediaSize DESC, path DESC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageSizeDesc(limit: Int, offset: Int): List<FavoriteEntity>
-
-    @Query("SELECT * FROM favorites ORDER BY mediaSize ASC, path ASC LIMIT :limit OFFSET :offset")
-    suspend fun getFavoritePageSizeAsc(limit: Int, offset: Int): List<FavoriteEntity>
-
+    @Query("SELECT * FROM favorites WHERE (:cursorDate IS NULL OR (mediaDateAdded < :cursorDate OR (mediaDateAdded = :cursorDate AND path < :cursorPath))) ORDER BY mediaDateAdded DESC, path ASC LIMIT :limit")
+    suspend fun getDateDescAfter(cursorDate: Long?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorDate IS NULL OR (mediaDateAdded > :cursorDate OR (mediaDateAdded = :cursorDate AND path > :cursorPath))) ORDER BY mediaDateAdded ASC, path ASC LIMIT :limit")
+    suspend fun getDateAscAfter(cursorDate: Long?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorName IS NULL OR (name COLLATE NOCASE > :cursorName OR (name COLLATE NOCASE = :cursorName AND path > :cursorPath))) ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit")
+    suspend fun getNameAscAfter(cursorName: String?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorName IS NULL OR (name COLLATE NOCASE < :cursorName OR (name COLLATE NOCASE = :cursorName AND path > :cursorPath))) ORDER BY name COLLATE NOCASE DESC, path ASC LIMIT :limit")
+    suspend fun getNameDescAfter(cursorName: String?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorSize IS NULL OR (mediaSize < :cursorSize OR (mediaSize = :cursorSize AND path > :cursorPath))) ORDER BY mediaSize DESC, path ASC LIMIT :limit")
+    suspend fun getSizeDescAfter(cursorSize: Long?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorSize IS NULL OR (mediaSize > :cursorSize OR (mediaSize = :cursorSize AND path > :cursorPath))) ORDER BY mediaSize ASC, path ASC LIMIT :limit")
+    suspend fun getSizeAscAfter(cursorSize: Long?, cursorPath: String?, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE (:cursorDate IS NULL OR (mediaDateAdded > :cursorDate OR (mediaDateAdded = :cursorDate AND path < :cursorPath))) ORDER BY mediaDateAdded DESC, path ASC LIMIT :limit")
+    suspend fun getDateDescBefore(cursorDate: Long, cursorPath: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE mediaDateAdded < :cursorDate OR (mediaDateAdded = :cursorDate AND path < :cursorPath) ORDER BY mediaDateAdded ASC, path ASC LIMIT :limit")
+    suspend fun getDateAscBefore(cursorDate: Long, cursorPath: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE name COLLATE NOCASE < :cursorName OR (name COLLATE NOCASE = :cursorName AND path < :cursorPath) ORDER BY name COLLATE NOCASE ASC, path ASC LIMIT :limit")
+    suspend fun getNameAscBefore(cursorName: String, cursorPath: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE name COLLATE NOCASE > :cursorName OR (name COLLATE NOCASE = :cursorName AND path < :cursorPath) ORDER BY name COLLATE NOCASE DESC, path ASC LIMIT :limit")
+    suspend fun getNameDescBefore(cursorName: String, cursorPath: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE mediaSize > :cursorSize OR (mediaSize = :cursorSize AND path < :cursorPath) ORDER BY mediaSize DESC, path ASC LIMIT :limit")
+    suspend fun getSizeDescBefore(cursorSize: Long, cursorPath: String, limit: Int): List<FavoriteEntity>
+    @Query("SELECT * FROM favorites WHERE mediaSize < :cursorSize OR (mediaSize = :cursorSize AND path < :cursorPath) ORDER BY mediaSize ASC, path ASC LIMIT :limit")
+    suspend fun getSizeAscBefore(cursorSize: Long, cursorPath: String, limit: Int): List<FavoriteEntity>
     @Query("SELECT COUNT(*) FROM favorites WHERE mediaDateAdded > :value OR (mediaDateAdded = :value AND path < :path)")
     suspend fun countFavoriteDateDescBefore(value: Long, path: String): Int
-
     @Query("SELECT COUNT(*) FROM favorites WHERE mediaDateAdded < :value OR (mediaDateAdded = :value AND path < :path)")
     suspend fun countFavoriteDateAscBefore(value: Long, path: String): Int
-
     @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE < :value OR (name COLLATE NOCASE = :value AND path < :path)")
     suspend fun countFavoriteNameAscBefore(value: String, path: String): Int
-
-    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE > :value OR (name COLLATE NOCASE = :value AND path > :path)")
+    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE > :value OR (name COLLATE NOCASE = :value AND path < :path)")
     suspend fun countFavoriteNameDescBefore(value: String, path: String): Int
-
     @Query("SELECT COUNT(*) FROM favorites WHERE mediaSize > :value OR (mediaSize = :value AND path < :path)")
     suspend fun countFavoriteSizeDescBefore(value: Long, path: String): Int
-
     @Query("SELECT COUNT(*) FROM favorites WHERE mediaSize < :value OR (mediaSize = :value AND path < :path)")
     suspend fun countFavoriteSizeAscBefore(value: Long, path: String): Int
-
     @Query("SELECT COUNT(*) FROM favorites")
     suspend fun getFavoriteCount(): Int
-
     @Query("SELECT timestamp FROM favorites WHERE path = :path LIMIT 1")
     suspend fun getFavoriteTimestamp(path: String): Long?
-
     @Query("SELECT COUNT(*) FROM favorites WHERE timestamp > :timestamp OR (timestamp = :timestamp AND path < :path)")
     suspend fun countFavoritesBefore(timestamp: Long, path: String): Int
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addFavorite(favorite: FavoriteEntity)
-
     @Query("DELETE FROM favorites WHERE path = :path")
     suspend fun removeFavorite(path: String)
 }
