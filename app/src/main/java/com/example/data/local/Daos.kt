@@ -59,6 +59,9 @@ interface FavoriteDao {
     @Query("SELECT COUNT(*) FROM favorites WHERE size < :size OR (size = :size AND path > :path)")
     suspend fun countSizeAscBefore(size: Long, path: String): Int
 
+    @Query("SELECT * FROM favorites WHERE path = :path LIMIT 1")
+    suspend fun getFavorite(path: String): FavoriteEntity?
+
     @Query("SELECT timestamp FROM favorites WHERE path = :path LIMIT 1")
     suspend fun getFavoriteTimestamp(path: String): Long?
 
