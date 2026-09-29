@@ -6,6 +6,7 @@ on:
       - apk-build-20260928
       - beta-hardening-20260929
       - beta-release-hardening-20260929
+      - gallery-aves-ui-crashfix-20260929
   workflow_dispatch:
 
 permissions:
