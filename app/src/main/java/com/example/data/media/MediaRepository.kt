@@ -28,6 +28,53 @@ class MediaRepository(context: Context) {
 
     private val appContext = context.applicationContext
 
+    suspend fun getMediaItem(uriString: String): com.example.data.model.MediaItem? =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val uri = android.net.Uri.parse(uriString)
+            val projection = arrayOf(
+                MediaStore.Files.FileColumns._ID,
+                MediaStore.Files.FileColumns.DISPLAY_NAME,
+                MediaStore.Files.FileColumns.DATA,
+                MediaStore.Files.FileColumns.SIZE,
+                MediaStore.Files.FileColumns.DATE_ADDED,
+                MediaStore.Files.FileColumns.MIME_TYPE,
+                MediaStore.Files.FileColumns.MEDIA_TYPE,
+                MediaStore.Files.FileColumns.DURATION,
+                MediaStore.Files.FileColumns.WIDTH,
+                MediaStore.Files.FileColumns.HEIGHT,
+                MediaStore.Files.FileColumns.BUCKET_ID,
+                MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
+            )
+            appContext.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@withContext null
+                val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID))
+                val type = cursor.getInt(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE))
+                val isVideo = type == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                val dataColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DATA)
+                val durationColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.DURATION)
+                val widthColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.WIDTH)
+                val heightColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.HEIGHT)
+                val bucketIdColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
+                val bucketNameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
+                com.example.data.model.MediaItem(
+                    id = id,
+                    uri = uri,
+                    name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)) ?: "Media_$id",
+                    path = if (dataColumn >= 0) cursor.getString(dataColumn) ?: "" else "",
+                    size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.SIZE)),
+                    dateAdded = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DATE_ADDED)) * 1000L,
+                    mimeType = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE))
+                        ?: if (isVideo) "video/*" else "image/*",
+                    duration = if (durationColumn >= 0 && !cursor.isNull(durationColumn)) cursor.getLong(durationColumn) else 0L,
+                    width = if (widthColumn >= 0 && !cursor.isNull(widthColumn)) cursor.getInt(widthColumn) else 0,
+                    height = if (heightColumn >= 0 && !cursor.isNull(heightColumn)) cursor.getInt(heightColumn) else 0,
+                    bucketId = if (bucketIdColumn >= 0) cursor.getString(bucketIdColumn) ?: "" else "",
+                    bucketName = if (bucketNameColumn >= 0) cursor.getString(bucketNameColumn) ?: "" else "",
+                    isVideo = isVideo
+                )
+            }
+        }
+
     fun favoritesPager(sort: com.example.ui.viewmodel.GallerySortOption = com.example.ui.viewmodel.GallerySortOption.DATE_DESC): Flow<PagingData<com.example.data.model.MediaItem>> = Pager(
         config = PagingConfig(pageSize = MediaStorePagingSource.MIN_PAGE_SIZE, initialLoadSize = MediaStorePagingSource.MIN_PAGE_SIZE, prefetchDistance = 15, maxSize = MediaStorePagingSource.MIN_PAGE_SIZE * 3, enablePlaceholders = false),
         pagingSourceFactory = { FavoriteMediaPagingSource(appContext, sort) }
