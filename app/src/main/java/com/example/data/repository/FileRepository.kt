@@ -696,7 +696,8 @@ class FileRepository(private val context: Context) {
             }
 
             val pageNames = sortedNames.subList(offset, minOf(offset + pageSize, totalCount))
-            val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+            val favoriteLookup = try { favoriteDao.getFavoritePathsForPaths(pageNames.map { File(dir, it).absolutePath }).toHashSet() } catch (e: Exception) { emptySet() }
+            val favSet = favoriteLookup
 
             val pageItems = ArrayList<FileItem>(pageNames.size)
             var statCacheHitsBatch = 0
@@ -801,7 +802,7 @@ class FileRepository(private val context: Context) {
         if (!dir.exists() || !dir.isDirectory) return@withContext emptyList()
 
         val files = dir.listFiles() ?: return@withContext emptyList()
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val favSet = emptySet<String>()
 
         val allItems = ArrayList<FileItem>(files.size)
         val entitiesToBatch = ArrayList<IndexedFileEntity>(files.size)
