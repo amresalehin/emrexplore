@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,7 +28,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tag
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,8 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -74,7 +68,6 @@ fun GallerySearchScreen(
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
-    val focusRequester = remember { FocusRequester() }
     var albums by remember { mutableStateOf(uiState.mediaAlbums) }
 
     BackHandler(onBack = onClose)
@@ -83,7 +76,6 @@ fun GallerySearchScreen(
         if (albums.isEmpty()) {
             albums = MediaAlbumRepository(context).getAlbums()
         }
-        focusRequester.requestFocus()
     }
 
     Surface(
@@ -104,9 +96,7 @@ fun GallerySearchScreen(
                 TextField(
                     value = uiState.gallerySearchQuery,
                     onValueChange = viewModel::setGallerySearchQuery,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester),
+                    modifier = Modifier.weight(1f),
                     singleLine = true,
                     placeholder = { Text("Search collection") },
                     trailingIcon = {
@@ -274,68 +264,52 @@ private fun GallerySearchResults(
     viewModel: UnifiedViewModel
 ) {
     val results = viewModel.galleryPagingFlow.collectAsLazyPagingItems()
+    val preview = results.itemSnapshotList.items.take(12)
 
-    when {
-        results.loadState.refresh is LoadState.Loading && results.itemCount == 0 -> {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(180.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
-            }
-        }
-        results.itemCount == 0 && results.loadState.refresh is LoadState.NotLoading -> {
-            Text(
-                "No matching media",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(vertical = 16.dp)
-            )
-        }
-        else -> {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(uiState.galleryColumns.coerceIn(2, 4)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(360.dp),
-                contentPadding = PaddingValues(2.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                items(
-                    count = results.itemCount,
-                    key = { index -> results.peek(index)?.uri?.toString() ?: "placeholder-$index" }
-                ) { index ->
-                    val item = results[index] ?: return@items
-                    SearchResultThumbnail(item)
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        when {
+            results.loadState.refresh is LoadState.Loading && preview.isEmpty() -> {
+                Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
                 }
+            }
+            preview.isEmpty() && results.loadState.refresh is LoadState.NotLoading -> {
+                Text("No matching media", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+            }
+            else -> {
+                val columns = uiState.galleryColumns.coerceIn(2, 4)
+                preview.chunked(columns).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        row.forEach { item -> SearchResultThumbnail(item, Modifier.weight(1f)) }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                if (results.loadState.append is LoadState.Loading) {
+                    Box(Modifier.fillMaxWidth().height(48.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                }
+                Text("Showing ${'$'}{preview.size} preview results. Press Search/Back to browse the full result set.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
 @Composable
-private fun SearchResultThumbnail(item: MediaItem) {
+private fun SearchResultThumbnail(item: MediaItem, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     AsyncImage(
-        model = ImageRequest.Builder(context)
-            .data(item.uri)
-            .size(240)
-            .memoryCacheKey("search:${item.uri}")
-            .diskCacheKey("search:${item.uri}")
-            .crossfade(false)
-            .build(),
+        model = ImageRequest.Builder(context).data(item.uri).size(240)
+            .memoryCacheKey("search:${'$'}{item.uri}").diskCacheKey("search:${'$'}{item.uri}")
+            .crossfade(false).build(),
         contentDescription = item.name,
         contentScale = ContentScale.Crop,
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(6.dp))
+        modifier = modifier.aspectRatio(1f).clip(RoundedCornerShape(6.dp))
     )
 }
-
 @Composable
 private fun SearchSection(
     title: String? = null,
