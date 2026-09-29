@@ -70,7 +70,6 @@ class FileRepository(private val context: Context) {
     private val preferencesDao = db.preferencesDao()
     private val indexStatusDao = db.indexStatusDao()
     private val indexingMutex = Mutex()
-    private val folderCache = java.util.concurrent.ConcurrentHashMap<String, List<FileItem>>()
 
     data class CachedStat(
         val size: Long,
@@ -86,16 +85,14 @@ class FileRepository(private val context: Context) {
 
     val operationManager = FileOperationManager { affectedPaths ->
         for (dir in affectedPaths) {
-            invalidateFolderCache(dir)
+            invalidateFolderState(dir)
         }
     }
 
-    fun invalidateFolderCache(dirPath: String? = null) {
+    private fun invalidateFolderState(dirPath: String? = null) {
         if (dirPath == null) {
-            folderCache.clear()
             statCache.clear()
         } else {
-            folderCache.remove(dirPath)
             statCache.keys.removeIf { it.startsWith(dirPath) }
         }
     }
@@ -616,75 +613,6 @@ class FileRepository(private val context: Context) {
         }
     }
 
-    suspend fun getCachedFiles(dirPath: String, showHidden: Boolean): List<FileItem>? = withContext(Dispatchers.IO) {
-        val dir = File(dirPath)
-        if (!dir.exists() || !dir.isDirectory) return@withContext null
-
-        // Never trust a stale in-memory/Room directory snapshot. External file
-        // managers, MediaStore, downloads, and other apps can change a folder
-        // without going through this repository.
-        val actualNames = try {
-            dir.list()?.asSequence()
-                ?.filter { showHidden || !it.startsWith(".") }
-                ?.toSet()
-        } catch (e: SecurityException) {
-            null
-        }
-
-        // If the directory cannot be enumerated, don't return a partial/stale
-        // cache. Let the caller fall back to the normal filesystem path.
-        if (actualNames == null) return@withContext null
-
-        val inMemory = folderCache[dirPath]
-        if (inMemory != null) {
-            val cachedNames = inMemory.asSequence()
-                .filter { showHidden || !it.name.startsWith(".") }
-                .map { it.name }
-                .toSet()
-
-            if (cachedNames == actualNames) {
-                return@withContext inMemory.let {
-                    if (showHidden) it else it.filter { !it.name.startsWith(".") }
-                }
-            }
-
-            // Cache is stale/incomplete. Do not let it hide real filesystem entries.
-            folderCache.remove(dirPath)
-        }
-
-        try {
-            val entities = fileIndexDao.getFilesByParent(dirPath)
-            val visibleEntities = entities.filter { showHidden || !it.name.startsWith(".") }
-            val indexedNames = visibleEntities.map { it.name }.toSet()
-
-            if (indexedNames == actualNames) {
-                val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
-                val items = entities.map { entity ->
-                    FileItem(
-                        name = entity.name,
-                        path = entity.path,
-                        size = entity.size,
-                        lastModified = entity.lastModified,
-                        isDirectory = entity.isDirectory,
-                        mimeType = entity.mimeType,
-                        extension = entity.extension,
-                        isFavorite = favSet.contains(entity.path),
-                        childCount = entity.childCount,
-                        uri = Uri.fromFile(File(entity.path))
-                    )
-                }
-                folderCache[dirPath] = items
-                return@withContext if (showHidden) items else items.filter { !it.name.startsWith(".") }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // Null deliberately means "cache cannot be trusted"; getFilesPaged()
-        // will enumerate the live directory and rebuild the current page.
-        null
-    }
-
     suspend fun getFilesPaged(
         dirPath: String,
         page: Int,
@@ -699,35 +627,8 @@ class FileRepository(private val context: Context) {
                 return@withContext PagedDirectoryResult(emptyList(), 0, page, pageSize, false)
             }
 
-            // 1. Check in-memory cache first if already populated
-            val cached = folderCache[dirPath]
-            if (cached != null) {
-                PerformanceMonitor.recordFolderCacheHit()
-                val filtered = if (showHidden) cached else cached.filter { !it.name.startsWith(".") }
-                val sorted = sortFileList(filtered, sortOption)
-                val pagedItems: List<FileItem>
-                val hasMore: Boolean
-                if (sorted.size <= 300) {
-                    pagedItems = sorted
-                    hasMore = false
-                } else {
-                    val offset = page * pageSize
-                    pagedItems = if (offset >= sorted.size) emptyList() else sorted.subList(offset, minOf(offset + pageSize, sorted.size))
-                    hasMore = (offset + pageSize) < sorted.size
-                }
-                val elapsed = System.currentTimeMillis() - startTimeMs
-                if (page == 0) PerformanceMonitor.recordFolderOpen(elapsed)
-                PerformanceMonitor.recordPagedLoad(elapsed)
-                return@withContext PagedDirectoryResult(
-                    items = pagedItems,
-                    totalCount = sorted.size,
-                    page = page,
-                    pageSize = pageSize,
-                    hasMore = hasMore
-                )
-            }
-
-            // 2. Check Room DB if fully indexed
+            // 1. Use the persistent index only when it is known to be fresh.
+            // 1. Check Room DB if fully indexed
             try {
                 val roomCount = fileIndexDao.getCountByParent(dirPath)
                 val indexedDirectory = fileIndexDao.hasIndexedPath(dirPath)
@@ -747,7 +648,7 @@ class FileRepository(private val context: Context) {
                         SortOption.DATE_DESC -> fileIndexDao.getFilesByParentDateDescPaged(dirPath, showHidden, pageSize, offset)
                         SortOption.TYPE -> fileIndexDao.getFilesByParentTypePaged(dirPath, showHidden, pageSize, offset)
                     }
-                    val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+                    val favSet = try { favoriteDao.getFavoritePathsForPaths(entities.map { it.path }).toHashSet() } catch (e: Exception) { emptySet() }
                     val items = entities.map { entity ->
                         val file = File(entity.path)
                         FileItem(
@@ -950,7 +851,7 @@ class FileRepository(private val context: Context) {
             )
         }
 
-        folderCache[dirPath] = allItems
+        /* removed bounded folder cache */ = allItems
 
         if (entitiesToBatch.isNotEmpty()) {
             try {
