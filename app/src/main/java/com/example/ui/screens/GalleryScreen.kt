@@ -384,6 +384,11 @@ fun GalleryScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
         // Aves-style contextual selection bar. Selection is limited to explicitly selected items.
         if (uiState.gallerySelection.isNotEmpty()) {
             GallerySelectionBar(
