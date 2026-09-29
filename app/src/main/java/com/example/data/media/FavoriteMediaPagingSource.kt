@@ -34,9 +34,10 @@ class FavoriteMediaPagingSource(
     private val resolver: ContentResolver = appContext.contentResolver
     private val favoriteDao = AppDatabase.getDatabase(appContext).favoriteDao()
 
-    override suspend fun load(params: LoadParams<FavoriteCursor>): LoadResult<FavoriteCursor, MediaItem> = try {
+    override suspend fun load(params: LoadParams<FavoriteCursor>): LoadResult<FavoriteCursor, MediaItem> {
+        return try {
         val limit = params.loadSize.coerceIn(1, MediaStorePagingSource.MAX_PAGE_SIZE)
-        if (params is LoadParams.Prepend) return LoadResult.Page(emptyList(), null, null)
+        if (params is LoadParams.Prepend) return@try LoadResult.Page(emptyList(), null, null)
         val cursor = (params as? LoadParams.Append)?.key
         val entities = if (cursor == null) initial(limit + 1) else after(cursor, limit + 1)
         val extra = entities.size > limit
