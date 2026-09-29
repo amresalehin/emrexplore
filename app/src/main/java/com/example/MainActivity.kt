@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -79,13 +80,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         // Configure Coil ImageLoader for high-performance lazy loading without scroll stutter
+        val memoryClassBytes =
+            (getSystemService(ACTIVITY_SERVICE) as ActivityManager).memoryClass.toLong() * 1024L * 1024L
+        val memoryCacheBytes = minOf(memoryClassBytes / 5L, 96L * 1024L * 1024L)
         val imageLoader = coil.ImageLoader.Builder(this)
             .components {
                 add(coil.decode.VideoFrameDecoder.Factory())
             }
             .memoryCache {
                 coil.memory.MemoryCache.Builder(this)
-                    .maxSizePercent(0.20)
+                    .maxSizeBytes(memoryCacheBytes)
                     .build()
             }
             .diskCache {
