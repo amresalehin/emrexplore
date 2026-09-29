@@ -659,7 +659,7 @@ class FileRepository(private val context: Context) {
                             isDirectory = entity.isDirectory,
                             mimeType = entity.mimeType,
                             extension = entity.extension,
-                            isFavorite = favSet.contains(entity.path),
+                            isFavorite = false,
                             childCount = if (entity.isDirectory) entity.childCount else 0,
                             uri = Uri.fromFile(file)
                         )
@@ -997,14 +997,13 @@ class FileRepository(private val context: Context) {
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {
         val result = mutableListOf<FileItem>()
-        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
 
         when (category) {
             CategoryType.IMAGES -> {
                 result.addAll(
                     getMediaCategoryFiles(
                         MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE,
-                        favSet
+                        emptySet()
                     )
                 )
             }
@@ -1061,7 +1060,7 @@ class FileRepository(private val context: Context) {
                 if (audioDir.exists()) {
                     audioDir.listFiles()?.forEach { f ->
                         if (f.isFile && f.extension.lowercase() in setOf("mp3", "wav", "m4a", "ogg")) {
-                            result.add(toFileItem(f, favSet))
+                            result.add(toFileItem(f, emptySet()))
                         }
                     }
                 }
@@ -1082,12 +1081,14 @@ class FileRepository(private val context: Context) {
                     File(rootPath, "Download")
                 ).filter { it.exists() }
                 for (dir in targets) {
-                    scanFilesRecursively(dir, category, result, maxDepth = 2, currentDepth = 0, favSet = favSet)
+                    scanFilesRecursively(dir, category, result, maxDepth = 2, currentDepth = 0, favSet = emptySet())
                 }
             }
         }
 
-        result.distinctBy { it.path }.sortedByDescending { it.lastModified }
+        val page = result.distinctBy { it.path }.sortedByDescending { it.lastModified }
+        val favoritePaths = try { favoriteDao.getFavoritePathsForPaths(page.map { it.path }).toHashSet() } catch (_: Exception) { emptySet() }
+        page.map { it.copy(isFavorite = favoritePaths.contains(it.path)) }
     }
 
     suspend fun getCategoryCounts(): Map<CategoryType, Int> = withContext(Dispatchers.IO) {
@@ -1161,22 +1162,23 @@ class FileRepository(private val context: Context) {
 
         val q = query.trim().lowercase()
         val result = mutableListOf<FileItem>()
-        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
         val rootsToScan = listOf(
             File(rootPath),
             baseWorkingDir
         ).distinctBy { it.absolutePath }
 
         for (root in rootsToScan) {
-            scanFilesForSearch(root, q, category, result, maxDepth = 3, currentDepth = 0, favSet = favSet)
+            scanFilesForSearch(root, q, category, result, maxDepth = 3, currentDepth = 0, favSet = emptySet())
             if (result.size >= 100) break
         }
 
         // Prioritize exact/prefix matches first, then contains, sorted by recent date
-        result.distinctBy { it.path }.sortedWith(
+        val page = result.distinctBy { it.path }.sortedWith(
             compareByDescending<FileItem> { it.name.lowercase().startsWith(q) }
                 .thenByDescending { it.lastModified }
         ).take(100)
+        val favoritePaths = try { favoriteDao.getFavoritePathsForPaths(page.map { it.path }).toHashSet() } catch (_: Exception) { emptySet() }
+        page.map { it.copy(isFavorite = favoritePaths.contains(it.path)) }
     }
 
     suspend fun searchFilesInDirectory(
@@ -1190,7 +1192,6 @@ class FileRepository(private val context: Context) {
 
         val normalizedDir = File(dirPath).absolutePath.removeSuffix("/")
         val pathPrefix = if (normalizedDir.isEmpty()) "/" else "$normalizedDir/"
-        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
 
         val indexed = fileIndexDao.searchFilesInPath(pathPrefix, q, limit)
             .asSequence()
@@ -1205,7 +1206,7 @@ class FileRepository(private val context: Context) {
                     isDirectory = entity.isDirectory,
                     mimeType = entity.mimeType,
                     extension = entity.extension,
-                    isFavorite = favSet.contains(entity.path),
+                    isFavorite = false,
                     childCount = entity.childCount,
                     uri = Uri.fromFile(file)
                 )
@@ -1213,7 +1214,8 @@ class FileRepository(private val context: Context) {
             .toList()
 
         if (indexed.isNotEmpty()) {
-            return@withContext indexed
+            val favoritePaths = try { favoriteDao.getFavoritePathsForPaths(indexed.map { it.path }).toHashSet() } catch (_: Exception) { emptySet() }
+            return@withContext indexed.map { it.copy(isFavorite = favoritePaths.contains(it.path)) }
         }
 
         val liveResults = mutableListOf<FileItem>()
@@ -1226,28 +1228,30 @@ class FileRepository(private val context: Context) {
                 outList = liveResults,
                 maxDepth = 20,
                 currentDepth = 0,
-                favSet = favSet
+                favSet = emptySet()
             )
         }
 
-        liveResults
+        val page = liveResults
             .distinctBy { it.path }
             .sortedWith(
                 compareByDescending<FileItem> { it.name.lowercase().startsWith(q.lowercase()) }
                     .thenByDescending { it.lastModified }
             )
             .take(limit)
+        val favoritePaths = try { favoriteDao.getFavoritePathsForPaths(page.map { it.path }).toHashSet() } catch (_: Exception) { emptySet() }
+        page.map { it.copy(isFavorite = favoritePaths.contains(it.path)) }
     }
 
     suspend fun searchIndexedFiles(query: String, category: CategoryType? = null): List<FileItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val q = query.trim()
-        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
         val entities = if (category != null) {
             fileIndexDao.searchFilesByCategory(q, category.name, limit = 150)
         } else {
             fileIndexDao.searchFiles(q, limit = 150)
         }
+        val favoritePaths = try { favoriteDao.getFavoritePathsForPaths(entities.map { it.path }).toHashSet() } catch (_: Exception) { emptySet() }
         entities.map { entity ->
             val file = File(entity.path)
             FileItem(
