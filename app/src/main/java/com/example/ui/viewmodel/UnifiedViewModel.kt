@@ -45,6 +45,7 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 import java.io.File
 
 enum class MainTab {
@@ -190,15 +191,25 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
      */
     val galleryPagingFlow: Flow<PagingData<MediaItem>> =
         combine(
-            galleryFilterFlow,
-            galleryDateFilterFlow,
-            galleryLocationFilterFlow,
-            gallerySearchFlow.debounce(250).distinctUntilChanged(),
-            galleryRefreshFlow,
-            gallerySortFlow
-        ) { filter, dateFilter, locationFilter, query, _, sort ->
-            GallerySearchState(filter, dateFilter, locationFilter, query.trim(), sort)
+            combine(
+                galleryFilterFlow,
+                galleryDateFilterFlow,
+                galleryLocationFilterFlow
+            ) { filter, dateFilter, locationFilter ->
+                Triple(filter, dateFilter, locationFilter)
+            },
+            gallerySearchFlow.debounce(250).distinctUntilChanged()
+        ) { filters, query ->
+            GallerySearchState(
+                filter = filters.first,
+                dateFilter = filters.second,
+                locationFilter = filters.third,
+                query = query.trim(),
+                sort = GallerySortOption.DATE_DESC
+            )
         }
+        .combine(galleryRefreshFlow) { state, _ -> state }
+        .combine(gallerySortFlow) { state, sort -> state.copy(sort = sort) }
         .flatMapLatest { state ->
             val composedQuery = composeGallerySearchQuery(
                 state.query,
@@ -1602,10 +1613,10 @@ private fun composeGallerySearchQuery(
     val tokens = mutableListOf<String>()
     if (query.isNotBlank()) tokens += query.trim()
     when (dateFilter) {
-        "TODAY" -> tokens += "date:${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())}
-        "LAST_7_DAYS" -> tokens += "after:${daysAgoSearchToken(7)}"
-        "THIS_MONTH" -> tokens += "month:${monthSearchToken()}"
-        "THIS_YEAR" -> tokens += "year:${yearSearchToken()}"
+        "TODAY" -> tokens += "date:" + java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
+        "LAST_7_DAYS" -> tokens += "after:" + daysAgoSearchToken(7)
+        "THIS_MONTH" -> tokens += "month:" + monthSearchToken()
+        "THIS_YEAR" -> tokens += "year:" + yearSearchToken()
     }
     when (locationFilter) {
         "WITH_GPS" -> tokens += "gps:true"
@@ -1613,7 +1624,6 @@ private fun composeGallerySearchQuery(
     }
     return tokens.joinToString(" ")
 }
-
 private fun daysAgoSearchToken(days: Int): String =
     java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(
         java.util.Date(System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L)
