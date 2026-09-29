@@ -22,14 +22,29 @@ data class MediaCursor(
     val id: Long
 ) {
     companion object {
-        fun from(item: MediaItem, sort: GallerySortOption): MediaCursor = when (sort) {
+        fun from(
+            id: Long,
+            dateAddedMillis: Long,
+            name: String,
+            size: Long,
+            sort: GallerySortOption
+        ): MediaCursor = when (sort) {
             GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
-                MediaCursor(longValue = item.dateAdded / 1000L, id = item.id)
+                MediaCursor(longValue = dateAddedMillis / 1000L, id = id)
             GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
-                MediaCursor(textValue = item.name, id = item.id)
+                MediaCursor(textValue = name, id = id)
             GallerySortOption.SIZE_ASC, GallerySortOption.SIZE_DESC ->
-                MediaCursor(longValue = item.size, id = item.id)
+                MediaCursor(longValue = size, id = id)
         }
+
+        fun from(item: MediaItem, sort: GallerySortOption): MediaCursor =
+            from(
+                id = item.id,
+                dateAddedMillis = item.dateAdded,
+                name = item.name,
+                size = item.size,
+                sort = sort
+            )
     }
 }
 
