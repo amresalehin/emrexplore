@@ -111,14 +111,12 @@ data class UiState(
     val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
     val galleryRecentSearches: List<String> = emptyList(),
-    val allMediaItems: List<MediaItem> = emptyList(),
-    val mediaItems: List<MediaItem> = emptyList(),
     val mediaAlbums: List<MediaAlbum> = emptyList(),
     val selectedAlbum: MediaAlbum? = null,
     val galleryColumns: Int = 3,
     val gallerySortOption: GallerySortOption = GallerySortOption.DATE_DESC,
     val isLoadingMedia: Boolean = false,
-    val gallerySelection: List<MediaItem> = emptyList(),
+    val gallerySelection: Set<String> = emptySet(),
 
     // Browse / Categories
     val selectedCategory: CategoryType? = null,
@@ -999,9 +997,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     // It never materializes the complete MediaStore library.
     fun toggleGallerySelection(item: MediaItem) {
         _uiState.update { state ->
-            val selected = state.gallerySelection.toMutableList()
-            val existing = selected.indexOfFirst { it.path == item.path }
-            if (existing >= 0) selected.removeAt(existing) else selected.add(item)
+            val selected = state.gallerySelection.toMutableSet()
+            val key = item.uri.toString()
+            if (!selected.add(key)) selected.remove(key)
             state.copy(gallerySelection = selected)
         }
     }
@@ -1011,22 +1009,29 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun favoriteGallerySelection() {
-        val selected = _uiState.value.gallerySelection
+        val selected = _uiState.value.gallerySelection.toList()
         if (selected.isEmpty()) return
         viewModelScope.launch {
-            selected.forEach { media -> repository.toggleFavorite(media.toFileItem()) }
+            var count = 0
+            selected.forEach { uriString ->
+                val media = mediaRepository.getMediaItem(uriString) ?: return@forEach
+                if (repository.toggleFavorite(media.toFileItem())) count++
+            }
             clearGallerySelection()
             refreshGallery()
-            showMessage("Updated favorites for " + selected.size + " items")
+            showMessage("Updated favorites for $count items")
         }
     }
 
     fun deleteGallerySelection(toTrash: Boolean = true) {
-        val selected = _uiState.value.gallerySelection
+        val selected = _uiState.value.gallerySelection.toList()
         if (selected.isEmpty()) return
         viewModelScope.launch {
             var count = 0
-            selected.forEach { media -> if (repository.deleteFile(media.path, toTrash)) count++ }
+            selected.forEach { uriString ->
+                val media = mediaRepository.getMediaItem(uriString) ?: return@forEach
+                if (repository.deleteFile(media.path, toTrash)) count++
+            }
             clearGallerySelection()
             refreshGallery()
             loadStorageStats()
