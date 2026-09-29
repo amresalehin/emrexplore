@@ -10,6 +10,9 @@ data class FavoriteEntity(
     val name: String,
     val isDirectory: Boolean,
     val mimeType: String = "",
+    val mediaUri: String = "",
+    val mediaDateAdded: Long = 0L,
+    val mediaSize: Long = 0L,
     val timestamp: Long = System.currentTimeMillis()
 )
 
