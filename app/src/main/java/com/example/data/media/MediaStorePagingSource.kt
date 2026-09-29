@@ -21,7 +21,16 @@ data class MediaCursor(
     val textValue: String = "",
     val id: Long
 ) {
-    companion object
+    companion object {
+        fun from(item: MediaItem, sort: GallerySortOption): MediaCursor = when (sort) {
+            GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
+                MediaCursor(longValue = item.dateAdded / 1000L, id = item.id)
+            GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
+                MediaCursor(textValue = item.name, id = item.id)
+            GallerySortOption.SIZE_ASC, GallerySortOption.SIZE_DESC ->
+                MediaCursor(longValue = item.size, id = item.id)
+        }
+    }
 }
 
 class MediaStorePagingSource(
@@ -202,13 +211,3 @@ class MediaStorePagingSource(
     }
 }
 
-internal fun MediaCursor.Companion.from(item: MediaItem, sort: GallerySortOption): MediaCursor = when (sort) {
-    GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
-        MediaCursor(longValue = item.dateAdded / 1000L, id = item.id)
-    GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
-        MediaCursor(textValue = item.name, id = item.id)
-    GallerySortOption.SIZE_ASC, GallerySortOption.SIZE_DESC ->
-        MediaCursor(longValue = item.size, id = item.id)
-}
-
-enum class MediaFilter { ALL, PHOTOS, VIDEOS }
