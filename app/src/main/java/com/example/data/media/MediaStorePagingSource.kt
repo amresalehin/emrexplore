@@ -202,7 +202,7 @@ class MediaStorePagingSource(
     }
 }
 
-private fun MediaCursor.Companion.from(item: MediaItem, sort: GallerySortOption): MediaCursor = when (sort) {
+internal fun MediaCursor.Companion.from(item: MediaItem, sort: GallerySortOption): MediaCursor = when (sort) {
     GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC ->
         MediaCursor(longValue = item.dateAdded / 1000L, id = item.id)
     GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC ->
