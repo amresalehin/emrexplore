@@ -24,115 +24,68 @@ class MediaAlbumRepository(context: Context) {
 
     @RequiresApi(Build.VERSION_CODES.O)
     private fun queryGroupedAlbums(): List<MediaAlbum> {
+        // MediaStore grouping does not expose both a reliable aggregate count and
+        // deterministic newest cover on all Android versions. Use one ordered scan
+        // instead of issuing count + cover queries for every bucket.
         val projection = arrayOf(
+            MediaStore.Files.FileColumns._ID,
+            MediaStore.Files.FileColumns.DATA,
+            MediaStore.Files.FileColumns.MEDIA_TYPE,
             MediaStore.Files.FileColumns.BUCKET_ID,
             MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME,
-            MediaStore.Files.FileColumns._ID,
-            MediaStore.Files.FileColumns.MEDIA_TYPE
+            MediaStore.Files.FileColumns.DATE_ADDED
         )
-        val args = Bundle().apply {
-            putString(
-                ContentResolver.QUERY_ARG_SQL_SELECTION,
-                MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
-            )
-            putStringArray(
-                ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS,
-                arrayOf(
-                    MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-                    MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
-                )
-            )
-            putStringArray(
-                ContentResolver.QUERY_ARG_GROUP_COLUMNS,
-                arrayOf(
-                    MediaStore.Files.FileColumns.BUCKET_ID,
-                    MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME
-                )
-            )
-            putString(
-                ContentResolver.QUERY_ARG_SQL_SORT_ORDER,
-                MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME + " ASC"
-            )
-        }
+        val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?)"
+        val args = arrayOf(
+            MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
+            MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString()
+        )
+        val counts = LinkedHashMap<String, Int>()
+        val names = LinkedHashMap<String, String>()
+        val covers = LinkedHashMap<String, android.net.Uri>()
 
-        val result = mutableListOf<MediaAlbum>()
-        resolver.query(MediaStore.Files.getContentUri("external"), projection, args, null)?.use { cursor ->
-            val idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
-            val nameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
-            val rowIdColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
+        resolver.query(
+            MediaStore.Files.getContentUri("external"),
+            projection,
+            selection,
+            args,
+            MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
+                MediaStore.Files.FileColumns._ID + " DESC"
+        )?.use { cursor ->
+            val idColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns._ID)
             val typeColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.MEDIA_TYPE)
+            val bucketColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_ID)
+            val nameColumn = cursor.getColumnIndex(MediaStore.Files.FileColumns.BUCKET_DISPLAY_NAME)
 
             while (cursor.moveToNext()) {
-                val bucketId = if (idColumn >= 0) cursor.getString(idColumn) ?: "" else ""
-                val name = if (nameColumn >= 0) cursor.getString(nameColumn) ?: "Unknown" else "Unknown"
-                val rowId = if (rowIdColumn >= 0) cursor.getLong(rowIdColumn) else -1L
-                val isVideo = typeColumn >= 0 &&
-                    cursor.getInt(typeColumn) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-                val coverUri = if (rowId >= 0) {
-                    if (isVideo) {
-                        android.content.ContentUris.withAppendedId(
-                            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId
-                        )
-                    } else {
-                        android.content.ContentUris.withAppendedId(
-                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId
-                        )
-                    }
-                } else null
+                val bucketId = if (bucketColumn >= 0) cursor.getString(bucketColumn) ?: "" else ""
+                val name = if (nameColumn >= 0) cursor.getString(nameColumn) ?: "" else ""
+                if (bucketId.isBlank() || name.isBlank()) continue
 
-                if (bucketId.isNotBlank() && name.isNotBlank()) {
-                    val selection = MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (?, ?) AND " +
-                        MediaStore.Files.FileColumns.BUCKET_ID + " = ?"
-                    val selectionArgs = arrayOf(
-                        MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE.toString(),
-                        MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO.toString(),
-                        bucketId
-                    )
-                    val count = resolver.query(
-                        MediaStore.Files.getContentUri("external"),
-                        arrayOf(MediaStore.Files.FileColumns._ID),
-                        selection,
-                        selectionArgs,
-                        null
-                    )?.use { it.count } ?: 0
+                counts[bucketId] = (counts[bucketId] ?: 0) + 1
+                names.putIfAbsent(bucketId, name)
 
-                    val coverProjection = arrayOf(
-                        MediaStore.Files.FileColumns._ID,
-                        MediaStore.Files.FileColumns.MEDIA_TYPE
-                    )
-                    val deterministicCover = resolver.query(
-                        MediaStore.Files.getContentUri("external"),
-                        coverProjection,
-                        selection,
-                        selectionArgs,
-                        MediaStore.Files.FileColumns.DATE_ADDED + " DESC, " +
-                            MediaStore.Files.FileColumns._ID + " DESC LIMIT 1"
-                    )?.use { coverCursor ->
-                        if (coverCursor.moveToFirst()) {
-                            val coverId = coverCursor.getLong(
-                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
-                            )
-                            val coverVideo = coverCursor.getInt(
-                                coverCursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MEDIA_TYPE)
-                            ) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
-                            ContentUris.withAppendedId(
-                                if (coverVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-                                else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                coverId
-                            )
-                        } else null
-                    }
-
-                    result += MediaAlbum(
-                        id = bucketId,
-                        name = name,
-                        coverUri = deterministicCover ?: coverUri,
-                        itemCount = count
+                if (!covers.containsKey(bucketId) && idColumn >= 0) {
+                    val rowId = cursor.getLong(idColumn)
+                    val isVideo = typeColumn >= 0 &&
+                        cursor.getInt(typeColumn) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
+                    covers[bucketId] = ContentUris.withAppendedId(
+                        if (isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        else MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        rowId
                     )
                 }
             }
         }
-        return result
+
+        return counts.map { (id, count) ->
+            MediaAlbum(
+                id = id,
+                name = names[id] ?: id,
+                coverUri = covers[id],
+                itemCount = count
+            )
+        }.sortedBy { it.name.lowercase() }
     }
 
     private fun queryAlbumsCompat(): List<MediaAlbum> {
