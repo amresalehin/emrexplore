@@ -184,18 +184,7 @@ class MediaRepository(context: Context) {
     ): MediaViewerWindow {
         val safeRadius = radius.coerceIn(0, 6)
         if (source == FullscreenMediaSource.FAVORITES) {
-            val position = FavoriteMediaPagingSource(appContext, sort).positionOf(centerItem)
-            val start = (position - safeRadius).coerceAtLeast(0)
-            val size = safeRadius * 2 + 1
-            val result = FavoriteMediaPagingSource(appContext, sort).load(
-                androidx.paging.PagingSource.LoadParams.Refresh(start, size, false)
-            )
-            return when (result) {
-                is androidx.paging.PagingSource.LoadResult.Page ->
-                    MediaViewerWindow(start, result.data, AppDatabase.getDatabase(appContext).favoriteDao().getFavoriteCount())
-                is androidx.paging.PagingSource.LoadResult.Error -> throw result.throwable
-                is androidx.paging.PagingSource.LoadResult.Invalid -> MediaViewerWindow(start, emptyList(), 0)
-            }
+            return FavoriteMediaPagingSource(appContext, sort).loadViewerWindowAround(centerItem, safeRadius)
         }
 
         val position = viewerPosition(centerItem, source, albumId, sort)
