@@ -133,5 +133,31 @@ class FavoriteMediaPagingSource(
         return result
     }
 
+    suspend fun positionOf(item: MediaItem): Int {
+        val e = favoriteDao.getFavorite(item.path) ?: return 0
+        return when (sort) {
+            GallerySortOption.DATE_DESC -> favoriteDao.countDateDescBefore(e.lastModified, e.path)
+            GallerySortOption.DATE_ASC -> favoriteDao.countDateAscBefore(e.lastModified, e.path)
+            GallerySortOption.NAME_ASC -> favoriteDao.countNameAscBefore(e.name, e.path)
+            GallerySortOption.NAME_DESC -> favoriteDao.countNameDescBefore(e.name, e.path)
+            GallerySortOption.SIZE_DESC -> favoriteDao.countSizeDescBefore(e.size, e.path)
+            GallerySortOption.SIZE_ASC -> favoriteDao.countSizeAscBefore(e.size, e.path)
+        }
+    }
+
+    suspend fun loadAround(item: MediaItem, radius: Int = 2): List<MediaItem> {
+        val e = favoriteDao.getFavorite(item.path) ?: return listOf(item)
+        val beforeEntities = when (sort) {
+            GallerySortOption.DATE_DESC -> favoriteDao.getFavoritesDateDescBefore(e.lastModified, e.path, radius)
+            GallerySortOption.DATE_ASC -> favoriteDao.getFavoritesDateAscBefore(e.lastModified, e.path, radius)
+            GallerySortOption.NAME_ASC -> favoriteDao.getFavoritesNameAscBefore(e.name, e.path, radius)
+            GallerySortOption.NAME_DESC -> favoriteDao.getFavoritesNameDescBefore(e.name, e.path, radius)
+            GallerySortOption.SIZE_DESC -> favoriteDao.getFavoritesSizeDescBefore(e.size, e.path, radius)
+            GallerySortOption.SIZE_ASC -> favoriteDao.getFavoritesSizeAscBefore(e.size, e.path, radius)
+        }.asReversed()
+        val afterEntities = after(FavoriteCursor.from(e), radius)
+        return (queryMedia(beforeEntities) + item + queryMedia(afterEntities)).distinctBy { it.uri }
+    }
+
     override fun getRefreshKey(state: PagingState<FavoriteCursor, MediaItem>): FavoriteCursor? = null
 }
