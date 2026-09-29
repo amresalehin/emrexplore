@@ -45,7 +45,6 @@ import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.util.Locale
 import java.io.File
 
 enum class MainTab {
@@ -108,8 +107,6 @@ data class UiState(
     // Gallery
     val gallerySubTab: GallerySubTab = GallerySubTab.TIMELINE,
     val galleryFilter: String = "ALL", // ALL, PHOTOS, VIDEOS, FAVORITES
-    val galleryDateFilter: String = "ALL", // ALL, TODAY, LAST_7_DAYS, THIS_MONTH, THIS_YEAR
-    val galleryLocationFilter: String = "ALL", // ALL, WITH_GPS, WITHOUT_GPS
     val gallerySearchQuery: String = "",
     val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
@@ -179,8 +176,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     private val metadataExtractor = MetadataExtractor(application)
     private val mediaRepository = MediaRepository(application)
     private val galleryFilterFlow = MutableStateFlow<MediaFilter?>(MediaFilter.ALL)
-    private val galleryDateFilterFlow = MutableStateFlow("ALL")
-    private val galleryLocationFilterFlow = MutableStateFlow("ALL")
     private val galleryRefreshFlow = MutableStateFlow(0L)
     private val gallerySearchFlow = MutableStateFlow("")
     private val gallerySortFlow = MutableStateFlow(GallerySortOption.DATE_DESC)
@@ -191,44 +186,28 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
      */
     val galleryPagingFlow: Flow<PagingData<MediaItem>> =
         combine(
-            combine(
-                galleryFilterFlow,
-                galleryDateFilterFlow,
-                galleryLocationFilterFlow
-            ) { filter, dateFilter, locationFilter ->
-                Triple(filter, dateFilter, locationFilter)
-            },
-            gallerySearchFlow.debounce(250).distinctUntilChanged()
-        ) { filters, query ->
-            GallerySearchState(
-                filter = filters.first,
-                dateFilter = filters.second,
-                locationFilter = filters.third,
-                query = query.trim(),
-                sort = GallerySortOption.DATE_DESC
-            )
+            galleryFilterFlow,
+            gallerySearchFlow.debounce(250).distinctUntilChanged(),
+            galleryRefreshFlow,
+            gallerySortFlow
+        ) { filter, query, _, sort ->
+            Triple(filter, query.trim(), sort)
         }
-        .combine(galleryRefreshFlow) { state, _ -> state }
-        .combine(gallerySortFlow) { state, sort -> state.copy(sort = sort) }
-        .flatMapLatest { state ->
-            val composedQuery = composeGallerySearchQuery(
-                state.query,
-                state.dateFilter,
-                state.locationFilter
-            )
-            if (state.filter == null && composedQuery.isBlank()) {
-                mediaRepository.favoritesPager(state.sort)
-            } else if (composedQuery.isBlank()) {
-                mediaRepository.pager(state.filter ?: MediaFilter.ALL, state.sort)
+        .flatMapLatest { (filter, query, sort) ->
+            if (filter == null && query.isBlank()) {
+                mediaRepository.favoritesPager(sort)
+            } else if (query.isBlank()) {
+                mediaRepository.pager(filter ?: MediaFilter.ALL, sort)
             } else {
                 mediaRepository.searchPager(
-                    composedQuery,
-                    state.filter ?: MediaFilter.ALL,
-                    favoritesOnly = state.filter == null,
-                    sort = state.sort
+                    query,
+                    filter ?: MediaFilter.ALL,
+                    favoritesOnly = filter == null,
+                    sort = sort
                 )
             }
-        }.cachedIn(viewModelScope)
+        }
+        .cachedIn(viewModelScope)
 
     private val _uiState = MutableStateFlow(UiState())
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -995,31 +974,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun setGalleryDateFilter(filter: String) {
-        val normalized = filter.uppercase(Locale.US)
-        _uiState.update { it.copy(galleryDateFilter = normalized) }
-        galleryDateFilterFlow.value = normalized
-    }
-
-    fun setGalleryLocationFilter(filter: String) {
-        val normalized = filter.uppercase(Locale.US)
-        _uiState.update { it.copy(galleryLocationFilter = normalized) }
-        galleryLocationFilterFlow.value = normalized
-    }
-
-    fun resetGalleryFilters() {
-        _uiState.update {
-            it.copy(
-                galleryFilter = "ALL",
-                galleryDateFilter = "ALL",
-                galleryLocationFilter = "ALL"
-            )
-        }
-        galleryFilterFlow.value = MediaFilter.ALL
-        galleryDateFilterFlow.value = "ALL"
-        galleryLocationFilterFlow.value = "ALL"
-    }
-
     fun selectAlbum(album: MediaAlbum?) {
         _uiState.update { it.copy(selectedAlbum = album) }
     }
@@ -1596,44 +1550,6 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         audioProgressJob?.cancel()
     }
 }
-
-private data class GallerySearchState(
-    val filter: MediaFilter?,
-    val dateFilter: String,
-    val locationFilter: String,
-    val query: String,
-    val sort: GallerySortOption
-)
-
-private fun composeGallerySearchQuery(
-    query: String,
-    dateFilter: String,
-    locationFilter: String
-): String {
-    val tokens = mutableListOf<String>()
-    if (query.isNotBlank()) tokens += query.trim()
-    when (dateFilter) {
-        "TODAY" -> tokens += "date:" + java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date())
-        "LAST_7_DAYS" -> tokens += "after:" + daysAgoSearchToken(7)
-        "THIS_MONTH" -> tokens += "month:" + monthSearchToken()
-        "THIS_YEAR" -> tokens += "year:" + yearSearchToken()
-    }
-    when (locationFilter) {
-        "WITH_GPS" -> tokens += "gps:true"
-        "WITHOUT_GPS" -> tokens += "gps:false"
-    }
-    return tokens.joinToString(" ")
-}
-private fun daysAgoSearchToken(days: Int): String =
-    java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(
-        java.util.Date(System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L)
-    )
-
-private fun monthSearchToken(): String =
-    java.text.SimpleDateFormat("yyyy-MM", Locale.US).format(java.util.Date())
-
-private fun yearSearchToken(): String =
-    java.text.SimpleDateFormat("yyyy", Locale.US).format(java.util.Date())
 
 
 private fun MediaItem.toFileItem(): FileItem = FileItem(
