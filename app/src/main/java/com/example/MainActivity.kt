@@ -325,19 +325,16 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
 
     // 1. Fullscreen Media Viewer
     if (uiState.fullscreenMediaIndex != null) {
-        FullscreenMediaViewer(
-            mediaList = uiState.fullscreenViewerWindow?.items ?: emptyList(),
-            currentIndex = uiState.fullscreenMediaIndex ?: 0,
-            windowStartIndex = uiState.fullscreenViewerWindow?.startIndex ?: 0,
-            totalCount = uiState.fullscreenViewerWindow?.totalCount
-                ?.coerceAtLeast(uiState.fullscreenViewerWindow?.items?.size ?: 0)
-                ?: 0,
+        uiState.fullscreenViewerWindow?.let { viewerWindow ->
+            FullscreenMediaViewer(
+                viewerWindow = viewerWindow,
+                currentIndex = uiState.fullscreenMediaIndex ?: viewerWindow.startIndex,
             onClose = { viewModel.closeFullscreenMedia() },
             onIndexChange = { newIdx -> viewModel.moveFullscreenMedia(newIdx) },
             onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) },
             onInspectMetadata = { mediaItem -> viewModel.inspectMetadata(mediaItem) }
-        )
-    }
+            )
+        }
 
     // 2. In-App Text File Editor
     if (uiState.activeTextFile != null) {
