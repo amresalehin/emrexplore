@@ -2,6 +2,7 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.media.MediaPlayer
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.ExplorerPreferencesEntity
@@ -77,6 +78,13 @@ data class ClipboardState(
     val sourcePaths: List<String>
 )
 
+data class ViewerWindowState(
+    val items: List<MediaItem>,
+    val startIndex: Int,
+    val totalCount: Int,
+    val currentIndex: Int
+)
+
 data class UiState(
     val currentTab: MainTab = MainTab.HOME,
     // File Explorer
@@ -111,14 +119,12 @@ data class UiState(
     val gallerySearchSubmittedQuery: String = "",
     val gallerySearchActive: Boolean = false,
     val galleryRecentSearches: List<String> = emptyList(),
-    val allMediaItems: List<MediaItem> = emptyList(),
-    val mediaItems: List<MediaItem> = emptyList(),
     val mediaAlbums: List<MediaAlbum> = emptyList(),
     val selectedAlbum: MediaAlbum? = null,
     val galleryColumns: Int = 3,
     val gallerySortOption: GallerySortOption = GallerySortOption.DATE_DESC,
     val isLoadingMedia: Boolean = false,
-    val gallerySelection: List<MediaItem> = emptyList(),
+    val gallerySelection: Set<String> = emptySet(),
 
     // Browse / Categories
     val selectedCategory: CategoryType? = null,
@@ -126,10 +132,7 @@ data class UiState(
     val categoryCounts: Map<CategoryType, Int> = emptyMap(),
 
     // Viewers & Modals
-    val fullscreenMediaIndex: Int? = null,
-    val fullscreenMediaList: List<MediaItem> = emptyList(),
-    val fullscreenWindowStartIndex: Int = 0,
-    val fullscreenTotalCount: Int = 0,
+    val fullscreenWindow: ViewerWindowState? = null,
     val fullscreenSource: FullscreenMediaSource? = null,
     val fullscreenAlbumId: String? = null,
     val fullscreenSearchQuery: String = "",
@@ -999,22 +1002,23 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     // It never materializes the complete MediaStore library.
     fun toggleGallerySelection(item: MediaItem) {
         _uiState.update { state ->
-            val selected = state.gallerySelection.toMutableList()
-            val existing = selected.indexOfFirst { it.path == item.path }
-            if (existing >= 0) selected.removeAt(existing) else selected.add(item)
+            val selected = state.gallerySelection.toMutableSet()
+            val key = item.uri.toString()
+            if (!selected.add(key)) selected.remove(key)
             state.copy(gallerySelection = selected)
         }
     }
 
     fun clearGallerySelection() {
-        _uiState.update { it.copy(gallerySelection = emptyList()) }
+        _uiState.update { it.copy(gallerySelection = emptySet()) }
     }
 
     fun favoriteGallerySelection() {
         val selected = _uiState.value.gallerySelection
         if (selected.isEmpty()) return
-        viewModelScope.launch {
-            selected.forEach { media -> repository.toggleFavorite(media.toFileItem()) }
+        viewModelScope.launch(Dispatchers.IO) {
+            selected.mapNotNull { mediaRepository.resolveMedia(Uri.parse(it)) }
+                .forEach { repository.toggleFavorite(it.toFileItem()) }
             clearGallerySelection()
             refreshGallery()
             showMessage("Updated favorites for " + selected.size + " items")
@@ -1024,9 +1028,10 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     fun deleteGallerySelection(toTrash: Boolean = true) {
         val selected = _uiState.value.gallerySelection
         if (selected.isEmpty()) return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             var count = 0
-            selected.forEach { media -> if (repository.deleteFile(media.path, toTrash)) count++ }
+            selected.mapNotNull { mediaRepository.resolveMedia(Uri.parse(it)) }
+                .forEach { media -> if (repository.deleteFile(media.path, toTrash)) count++ }
             clearGallerySelection()
             refreshGallery()
             loadStorageStats()
@@ -1041,14 +1046,11 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         albumId: String? = null
     ) {
         val stateBeforeOpen = _uiState.value
-        val fallbackIndex = list.indexOfFirst { it.path == item.path }.takeIf { it >= 0 } ?: 0
         val searchFavoriteOnly = stateBeforeOpen.galleryFilter == "FAVORITES"
+        val fallbackIndex = list.indexOfFirst { it.uri == item.uri }.takeIf { it >= 0 } ?: 0
         _uiState.update {
             it.copy(
-                fullscreenMediaIndex = fallbackIndex,
-                fullscreenMediaList = listOf(item),
-                fullscreenWindowStartIndex = fallbackIndex,
-                fullscreenTotalCount = list.size,
+                fullscreenWindow = ViewerWindowState(listOf(item), fallbackIndex, list.size.coerceAtLeast(1), fallbackIndex),
                 fullscreenSource = source,
                 fullscreenAlbumId = albumId,
                 fullscreenSearchQuery = if (source == FullscreenMediaSource.SEARCH) stateBeforeOpen.gallerySearchSubmittedQuery else "",
@@ -1067,40 +1069,17 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         else -> MediaFilter.ALL
                     }
                     val window = mediaRepository.loadSearchViewerWindow(
-                        item = item,
-                        query = stateBeforeOpen.gallerySearchSubmittedQuery,
-                        filter = filter,
-                        favoritesOnly = searchFavoriteOnly,
-                        radius = 2
+                        item, stateBeforeOpen.gallerySearchSubmittedQuery, filter,
+                        searchFavoriteOnly, radius = 2, sort = stateBeforeOpen.gallerySortOption
                     )
-                    _uiState.update {
-                        it.copy(
-                            fullscreenMediaIndex = window.startIndex,
-                            fullscreenMediaList = window.items,
-                            fullscreenWindowStartIndex = window.startIndex,
-                            fullscreenTotalCount = window.totalCount,
-                            fullscreenLoading = false
-                        )
-                    }
+                    _uiState.update { it.copy(fullscreenWindow = ViewerWindowState(window.items, window.startIndex, window.totalCount, window.startIndex), fullscreenLoading = false) }
                     return@launch
                 }
-
-                val absoluteIndex = mediaRepository.viewerPosition(item, source, albumId, stateBeforeOpen.gallerySortOption)
                 val window = mediaRepository.loadViewerWindow(
-                    source,
-                    absoluteIndex,
-                    radius = 2,
-                    albumId = albumId,
-                    sort = stateBeforeOpen.gallerySortOption
+                    item, source, radius = 2, albumId = albumId, sort = stateBeforeOpen.gallerySortOption
                 )
                 _uiState.update {
-                    it.copy(
-                        fullscreenMediaIndex = absoluteIndex,
-                        fullscreenMediaList = window.items,
-                        fullscreenWindowStartIndex = window.startIndex,
-                        fullscreenTotalCount = window.totalCount,
-                        fullscreenLoading = false
-                    )
+                    it.copy(fullscreenWindow = ViewerWindowState(window.items, window.startIndex, window.totalCount, window.startIndex), fullscreenLoading = false)
                 }
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
@@ -1113,10 +1092,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         fullscreenLoadJob?.cancel()
         _uiState.update {
             it.copy(
-                fullscreenMediaIndex = 0,
-                fullscreenMediaList = listOf(item),
-                fullscreenWindowStartIndex = 0,
-                fullscreenTotalCount = 1,
+                fullscreenWindow = ViewerWindowState(listOf(item), 0, 1, 0),
                 fullscreenSource = null,
                 fullscreenAlbumId = null,
                 fullscreenSearchQuery = "",
@@ -1131,10 +1107,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         fullscreenLoadJob = null
         _uiState.update {
             it.copy(
-                fullscreenMediaIndex = null,
-                fullscreenMediaList = emptyList(),
-                fullscreenWindowStartIndex = 0,
-                fullscreenTotalCount = 0,
+                fullscreenWindow = null,
                 fullscreenSource = null,
                 fullscreenAlbumId = null,
                 fullscreenLoading = false
@@ -1144,338 +1117,39 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
 
     fun moveFullscreenMedia(targetIndex: Int) {
         val state = _uiState.value
+        val windowState = state.fullscreenWindow ?: return
         val source = state.fullscreenSource ?: return
-        val total = state.fullscreenTotalCount
+        val total = windowState.totalCount
         if (targetIndex !in 0 until total || state.fullscreenLoading) return
-        if (targetIndex in state.fullscreenWindowStartIndex until (state.fullscreenWindowStartIndex + state.fullscreenMediaList.size)) {
-            _uiState.update { it.copy(fullscreenMediaIndex = targetIndex) }
+        if (targetIndex in windowState.startIndex until (windowState.startIndex + windowState.items.size)) {
+            _uiState.update { it.copy(fullscreenWindow = windowState.copy(currentIndex = targetIndex)) }
             return
         }
         fullscreenLoadJob?.cancel()
         fullscreenLoadJob = viewModelScope.launch {
             _uiState.update { it.copy(fullscreenLoading = true) }
             try {
-                if (source == FullscreenMediaSource.SEARCH) {
+                val anchor = if (targetIndex < windowState.startIndex) windowState.items.firstOrNull() else windowState.items.lastOrNull()
+                if (anchor == null) {
+                    _uiState.update { it.copy(fullscreenLoading = false) }
+                    return@launch
+                }
+                val window = if (source == FullscreenMediaSource.SEARCH) {
                     val filter = when (state.galleryFilter) {
                         "PHOTOS" -> MediaFilter.PHOTOS
                         "VIDEOS" -> MediaFilter.VIDEOS
                         else -> MediaFilter.ALL
                     }
-                    val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
-                        state.fullscreenMediaList.firstOrNull()
-                    } else {
-                        state.fullscreenMediaList.lastOrNull()
-                    } ?: run {
-                        _uiState.update { it.copy(fullscreenLoading = false) }
-                        return@launch
-                    }
-
-                    val window = mediaRepository.loadSearchViewerWindow(
-                        item = anchor,
-                        query = state.fullscreenSearchQuery,
-                        filter = filter,
-                        favoritesOnly = state.fullscreenSearchFavoriteOnly,
-                        radius = 2,
-                        sort = state.gallerySortOption
-                    )
-                    _uiState.update {
-                        it.copy(
-                            fullscreenMediaList = window.items,
-                            fullscreenWindowStartIndex = window.startIndex,
-                            fullscreenTotalCount = window.totalCount,
-                            fullscreenMediaIndex = targetIndex,
-                            fullscreenLoading = false
-                        )
-                    }
-                    return@launch
+                    mediaRepository.loadSearchViewerWindow(anchor, state.fullscreenSearchQuery, filter, state.fullscreenSearchFavoriteOnly, 2, state.gallerySortOption)
+                } else {
+                    mediaRepository.loadViewerWindow(anchor, source, 2, state.fullscreenAlbumId, state.gallerySortOption)
                 }
-
-                val window = mediaRepository.loadViewerWindow(
-                    source,
-                    targetIndex,
-                    radius = 2,
-                    albumId = state.fullscreenAlbumId,
-                    sort = state.gallerySortOption
-                )
                 _uiState.update {
-                    it.copy(
-                        fullscreenMediaList = window.items,
-                        fullscreenWindowStartIndex = window.startIndex,
-                        fullscreenTotalCount = window.totalCount,
-                        fullscreenMediaIndex = targetIndex,
-                        fullscreenLoading = false
-                    )
+                    it.copy(fullscreenWindow = ViewerWindowState(window.items, window.startIndex, window.totalCount, targetIndex), fullscreenLoading = false)
                 }
             } catch (t: Throwable) {
                 if (t is kotlinx.coroutines.CancellationException) throw t
                 _uiState.update { it.copy(fullscreenLoading = false) }
-            }
-        }
-    }
-
-    fun nextMedia() {
-        val curr = _uiState.value.fullscreenMediaIndex ?: return
-        moveFullscreenMedia(curr + 1)
-    }
-
-    fun previousMedia() {
-        val curr = _uiState.value.fullscreenMediaIndex ?: return
-        moveFullscreenMedia(curr - 1)
-    }
-
-    // --- Browse / Categories Actions ---
-
-    fun selectCategory(category: CategoryType?) {
-        _uiState.update { it.copy(selectedCategory = category) }
-        if (category != null) {
-            viewModelScope.launch {
-                val list = repository.getFilesByCategory(category)
-                _uiState.update { it.copy(categoryFiles = list) }
-            }
-        }
-    }
-
-    private fun calculateCategoryCounts() {
-        viewModelScope.launch {
-            val counts = repository.getCategoryCounts()
-            _uiState.update { it.copy(categoryCounts = counts) }
-        }
-    }
-
-    // --- In-App File Viewers ---
-
-    fun openFile(fileItem: FileItem) {
-        viewModelScope.launch {
-            repository.recordRecent(fileItem)
-
-            when {
-                fileItem.isImage || fileItem.isVideo -> {
-                    // Open in Fullscreen Media Viewer
-                    val mediaItem = MediaItem(
-                        id = fileItem.path.hashCode().toLong(),
-                        uri = fileItem.uri ?: android.net.Uri.fromFile(File(fileItem.path)),
-                        name = fileItem.name,
-                        path = fileItem.path,
-                        size = fileItem.size,
-                        dateAdded = fileItem.lastModified,
-                        mimeType = fileItem.mimeType,
-                        isVideo = fileItem.isVideo,
-                        isFavorite = fileItem.isFavorite
-                    )
-                    openStandaloneFullscreenMedia(mediaItem)
-                }
-                fileItem.isAudio -> {
-                    playAudio(fileItem)
-                }
-                fileItem.isArchive -> {
-                    openZip(fileItem)
-                }
-                fileItem.isTextEditable -> {
-                    openTextEditor(fileItem)
-                }
-                else -> {
-                    // Show Details
-                    openProperties(fileItem)
-                }
-            }
-        }
-    }
-
-    fun openTextEditor(fileItem: FileItem) {
-        viewModelScope.launch {
-            val text = repository.readText(fileItem.path)
-            _uiState.update {
-                it.copy(
-                    activeTextFile = fileItem,
-                    textFileContent = text,
-                    isEditingText = false
-                )
-            }
-        }
-    }
-
-    fun closeTextEditor() {
-        _uiState.update {
-            it.copy(
-                activeTextFile = null,
-                textFileContent = "",
-                isEditingText = false
-            )
-        }
-    }
-
-    fun toggleTextEditing(editing: Boolean) {
-        _uiState.update { it.copy(isEditingText = editing) }
-    }
-
-    fun updateTextContent(newContent: String) {
-        _uiState.update { it.copy(textFileContent = newContent) }
-    }
-
-    fun saveTextFile() {
-        val file = _uiState.value.activeTextFile ?: return
-        val content = _uiState.value.textFileContent
-        viewModelScope.launch {
-            val ok = repository.writeText(file.path, content)
-            if (ok) {
-                showMessage("Saved changes to ${file.name}")
-                _uiState.update { it.copy(isEditingText = false) }
-                loadFiles()
-            } else {
-                showMessage("Failed to save ${file.name}")
-            }
-        }
-    }
-
-    fun openZip(fileItem: FileItem) {
-        viewModelScope.launch {
-            val entries = repository.listZipEntries(fileItem.path)
-            _uiState.update {
-                it.copy(
-                    activeZipFile = fileItem,
-                    zipEntries = entries
-                )
-            }
-        }
-    }
-
-    fun closeZip() {
-        _uiState.update {
-            it.copy(
-                activeZipFile = null,
-                zipEntries = emptyList(),
-                isExtractingZip = false
-            )
-        }
-    }
-
-    fun extractCurrentZip() {
-        val zip = _uiState.value.activeZipFile ?: return
-        val dest = File(zip.path).parentFile?.absolutePath ?: _uiState.value.currentPath
-        val extractFolder = File(dest, zip.name.substringBeforeLast(".")).absolutePath
-
-        viewModelScope.launch {
-            _uiState.update { it.copy(isExtractingZip = true) }
-            val ok = repository.extractZip(zip.path, extractFolder)
-            _uiState.update { it.copy(isExtractingZip = false) }
-            if (ok) {
-                showMessage("Extracted to ${File(extractFolder).name}")
-                closeZip()
-                loadFiles()
-            } else {
-                showMessage("Extraction failed")
-            }
-        }
-    }
-
-    fun openProperties(fileItem: FileItem) {
-        _uiState.update { it.copy(activeDetailItem = fileItem) }
-    }
-
-    fun closeProperties() {
-        _uiState.update { it.copy(activeDetailItem = null) }
-    }
-
-    fun inspectMetadata(fileItem: FileItem) {
-        if (fileItem.isDirectory) return
-        viewModelScope.launch(Dispatchers.IO) {
-            val report = runCatching { metadataExtractor.extract(File(fileItem.path)) }.getOrNull()
-            _uiState.update { it.copy(metadataReport = report) }
-        }
-    }
-
-    fun inspectMetadata(mediaItem: MediaItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val report = runCatching {
-                if (mediaItem.path.isNotBlank() && File(mediaItem.path).canRead()) metadataExtractor.extract(File(mediaItem.path))
-                else metadataExtractor.extractFromUri(mediaItem.uri, mediaItem.name, mediaItem.size, mediaItem.path)
-            }.getOrNull()
-            _uiState.update { it.copy(metadataReport = report) }
-        }
-    }
-
-    fun closeMetadataInspector() {
-        _uiState.update { it.copy(metadataReport = null) }
-    }
-
-    // Audio Playback
-    fun playAudio(fileItem: FileItem) {
-        try {
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer().apply {
-                setDataSource(fileItem.path)
-                setOnPreparedListener { player ->
-                    player.start()
-                    _uiState.update {
-                        it.copy(
-                            activeAudioFile = fileItem,
-                            isAudioPlaying = true,
-                            audioDurationMs = player.duration.coerceAtLeast(0),
-                            audioPositionMs = 0
-                        )
-                    }
-                    startAudioTracking()
-                }
-                setOnCompletionListener {
-                    _uiState.update { it.copy(isAudioPlaying = false, audioPositionMs = 0) }
-                }
-                setOnErrorListener { _, _, _ ->
-                    _uiState.update { it.copy(isAudioPlaying = false) }
-                    showMessage("Could not play audio")
-                    true
-                }
-                prepareAsync()
-            }
-            _uiState.update {
-                it.copy(
-                    activeAudioFile = fileItem,
-                    isAudioPlaying = false,
-                    audioDurationMs = 0,
-                    audioPositionMs = 0
-                )
-            }
-        } catch (e: Exception) {
-            mediaPlayer?.release()
-            mediaPlayer = null
-            e.printStackTrace()
-            showMessage("Could not play audio: ${e.message}")
-        }
-    }
-
-    fun toggleAudioPlayPause() {
-        val mp = mediaPlayer ?: return
-        if (mp.isPlaying) {
-            mp.pause()
-            _uiState.update { it.copy(isAudioPlaying = false) }
-        } else {
-            mp.start()
-            _uiState.update { it.copy(isAudioPlaying = true) }
-            startAudioTracking()
-        }
-    }
-
-    fun stopAudio() {
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
-        mediaPlayer = null
-        audioProgressJob?.cancel()
-        _uiState.update {
-            it.copy(
-                activeAudioFile = null,
-                isAudioPlaying = false,
-                audioDurationMs = 0,
-                audioPositionMs = 0
-            )
-        }
-    }
-
-    private fun startAudioTracking() {
-        audioProgressJob?.cancel()
-        audioProgressJob = viewModelScope.launch(Dispatchers.Main) {
-            while (isActive && mediaPlayer != null && _uiState.value.isAudioPlaying) {
-                val pos = mediaPlayer?.currentPosition ?: 0
-                _uiState.update { it.copy(audioPositionMs = pos) }
-                delay(300)
             }
         }
     }
@@ -1487,9 +1161,15 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
             showMessage(if (isNowFav) "Added to Favorites" else "Removed from Favorites")
 
             _uiState.update { state ->
-                state.copy(fullscreenMediaList = state.fullscreenMediaList.map { media ->
-                    if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
-                })
+                state.fullscreenWindow?.let { window ->
+                    state.copy(
+                        fullscreenWindow = window.copy(
+                            items = window.items.map { media ->
+                                if (media.path == fileItem.path) media.copy(isFavorite = isNowFav) else media
+                            }
+                        )
+                    )
+                } ?: state
             }
             loadFiles()
             refreshGallery()
