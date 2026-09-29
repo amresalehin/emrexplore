@@ -10,7 +10,9 @@ data class FavoriteEntity(
     val name: String,
     val isDirectory: Boolean,
     val mimeType: String = "",
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val size: Long = 0L,
+    val lastModified: Long = 0L
 )
 
 @Entity(tableName = "trash")
