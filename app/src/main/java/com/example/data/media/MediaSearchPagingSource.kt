@@ -526,7 +526,7 @@ private data class QueryPage(
     val exhausted: Boolean
 )
 
-private data class ParsedMediaSearch(
+private internal data class ParsedMediaSearch(
     val type: MediaFilter? = MediaFilter.ALL,
     val nameTerms: List<String> = emptyList(),
     val album: String? = null,
@@ -563,7 +563,7 @@ private data class Near(
     val radiusKm: Double
 )
 
-private object MediaSearchParser {
+internal object MediaSearchParser {
     fun parse(rawQuery: String, baseFilter: MediaFilter): ParsedMediaSearch {
         val terms = tokenize(rawQuery)
         val nameTerms = mutableListOf<String>()
