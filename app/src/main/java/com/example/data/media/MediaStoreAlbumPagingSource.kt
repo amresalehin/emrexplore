@@ -98,13 +98,23 @@ class MediaStoreAlbumPagingSource(
         prepend: Boolean
     ): List<MediaItem> {
         val order = sortOrder(reverse = prepend)
-        val queryArgs = Bundle().apply {
-            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
-            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
-            putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val queryArgs = Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+                putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
+            }
+            resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
+        } else {
+            resolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                selection,
+                args.toTypedArray(),
+                order + " LIMIT " + limit
+            )
         }
-        val cursor = resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
         val rows = cursor?.use(::readCursor) ?: emptyList()
         return if (prepend) rows.asReversed() else rows
     }
