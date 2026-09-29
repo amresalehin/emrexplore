@@ -149,9 +149,13 @@ class FavoriteMediaPagingSource(
     ): QueryPage {
         val roomCursor = cursor?.let {
             FavoriteCursor(
-                longValue = it.longValue,
-                textValue = it.textValue,
-                path = it.id.toString()
+                longValue = when (sort) {
+                    GallerySortOption.DATE_DESC, GallerySortOption.DATE_ASC -> it.dateAddedSeconds
+                    GallerySortOption.SIZE_DESC, GallerySortOption.SIZE_ASC -> it.size
+                    GallerySortOption.NAME_ASC, GallerySortOption.NAME_DESC -> 0L
+                },
+                textValue = it.name,
+                path = it.path
             )
         }
         val entities = if (prepend) loadBefore(roomCursor, limit * 2) else loadAfter(roomCursor, limit * 2)

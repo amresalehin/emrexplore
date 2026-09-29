@@ -9,10 +9,13 @@ data class MediaCursor(
     val name: String,
     val size: Long,
     val id: Long,
-    val mediaType: Int
+    val mediaType: Int,
+    val path: String = ""
 ) {
     companion object {
-        fun from(item: MediaItem) = MediaCursor(item.dateAdded / 1000L, item.name, item.size, item.id, if (item.isVideo) MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO else MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE)
+        fun from(item: MediaItem) = MediaCursor(item.dateAdded / 1000L, item.name, item.size, item.id, if (item.isVideo) MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO else MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE, item.path)
+
+        fun from(item: MediaItem, sort: GallerySortOption) = from(item)
     }
 }
 

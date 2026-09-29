@@ -9,19 +9,27 @@ import org.junit.Test
 
 class MediaArchitectureTest {
 
-
     @Test
-    fun mediaCursorIsStableForEveryGallerySort() {
-        val id = 42L
-        val dateAddedMillis = 123_000L
-        val name = "IMG_0042.jpg"
-        val size = 2048L
-        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.DATE_DESC))
-        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.DATE_ASC))
-        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.NAME_ASC))
-        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.NAME_DESC))
-        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.SIZE_ASC))
-        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.SIZE_DESC))
+    fun mediaCursorIncludesStableCompositeIdentity() {
+        val item = com.example.data.model.MediaItem(
+            id = 42L,
+            uri = android.net.Uri.parse("content://media/external/images/media/42"),
+            name = "IMG_0042.jpg",
+            path = "/DCIM/IMG_0042.jpg",
+            size = 2048L,
+            dateAdded = 123_000L,
+            mimeType = "image/jpeg",
+            isVideo = false
+        )
+        for (sort in GallerySortOption.values()) {
+            val cursor = MediaCursor.from(item, sort)
+            assertEquals(42L, cursor.id)
+            assertEquals(123L, cursor.dateAddedSeconds)
+            assertEquals("IMG_0042.jpg", cursor.name)
+            assertEquals(2048L, cursor.size)
+            assertEquals(com.example.data.media.MediaFilter.PHOTOS.ordinal, if (cursor.mediaType == android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE) com.example.data.media.MediaFilter.PHOTOS.ordinal else com.example.data.media.MediaFilter.VIDEOS.ordinal)
+            assertEquals("/DCIM/IMG_0042.jpg", cursor.path)
+        }
     }
 
     @Test
