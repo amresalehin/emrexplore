@@ -2,6 +2,7 @@ package com.example.data.media
 
 import android.content.Context
 import android.content.ContentResolver
+import android.os.Build
 import android.provider.MediaStore
 import com.example.data.local.AppDatabase
 import androidx.paging.Pager
@@ -266,13 +267,24 @@ class MediaRepository(context: Context) {
 
         val projection = viewerProjection()
         val order = viewerSortOrder(sort, reverse = before)
-        val queryArgs = android.os.Bundle().apply {
-            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selectionParts.joinToString(" AND "))
-            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
-            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
-            putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
+        val selection = selectionParts.joinToString(" AND ")
+        val cursor = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val queryArgs = android.os.Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args.toTypedArray())
+                putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, order)
+                putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
+            }
+            resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
+        } else {
+            resolver.query(
+                MediaStore.Files.getContentUri("external"),
+                projection,
+                selection,
+                args.toTypedArray(),
+                order + " LIMIT " + limit
+            )
         }
-        val cursor = resolver.query(MediaStore.Files.getContentUri("external"), projection, queryArgs, null)
         val rows = cursor?.use { readViewerCursor(it) } ?: emptyList()
         return if (before) rows.asReversed() else rows
     }
