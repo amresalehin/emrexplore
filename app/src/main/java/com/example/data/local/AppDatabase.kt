@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -17,7 +19,7 @@ import androidx.room.RoomDatabase
         MediaMetadataEntity::class,
         PlaceSearchCacheEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +34,16 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun placeSearchCacheDao(): PlaceSearchCacheDao
 
     companion object {
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE favorites ADD COLUMN size INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("ALTER TABLE favorites ADD COLUMN lastModified INTEGER NOT NULL DEFAULT 0")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_lastModified ON favorites(lastModified)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_name ON favorites(name)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_favorites_size ON favorites(size)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -41,7 +53,8 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "fossify_files.db"
-                ).fallbackToDestructiveMigrationOnDowngrade()
+                ).addMigrations(MIGRATION_3_4)
+                 .fallbackToDestructiveMigrationOnDowngrade()
                  .build()
                 INSTANCE = instance
                 instance
