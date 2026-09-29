@@ -38,6 +38,24 @@ interface FavoriteDao {
     @Query("SELECT * FROM favorites ORDER BY mediaSize ASC, path ASC LIMIT :limit OFFSET :offset")
     suspend fun getFavoritePageSizeAsc(limit: Int, offset: Int): List<FavoriteEntity>
 
+    @Query("SELECT COUNT(*) FROM favorites WHERE mediaDateAdded > :value OR (mediaDateAdded = :value AND path < :path)")
+    suspend fun countFavoriteDateDescBefore(value: Long, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE mediaDateAdded < :value OR (mediaDateAdded = :value AND path < :path)")
+    suspend fun countFavoriteDateAscBefore(value: Long, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE < :value OR (name COLLATE NOCASE = :value AND path < :path)")
+    suspend fun countFavoriteNameAscBefore(value: String, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE name COLLATE NOCASE > :value OR (name COLLATE NOCASE = :value AND path > :path)")
+    suspend fun countFavoriteNameDescBefore(value: String, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE mediaSize > :value OR (mediaSize = :value AND path < :path)")
+    suspend fun countFavoriteSizeDescBefore(value: Long, path: String): Int
+
+    @Query("SELECT COUNT(*) FROM favorites WHERE mediaSize < :value OR (mediaSize = :value AND path < :path)")
+    suspend fun countFavoriteSizeAscBefore(value: Long, path: String): Int
+
     @Query("SELECT COUNT(*) FROM favorites")
     suspend fun getFavoriteCount(): Int
 
