@@ -141,7 +141,7 @@ class FavoriteMediaPagingSource(
     )
 
 
-    suspend fun loadSearch(
+    internal suspend fun loadSearch(
         cursor: MediaCursor?,
         limit: Int,
         query: ParsedMediaSearch,
