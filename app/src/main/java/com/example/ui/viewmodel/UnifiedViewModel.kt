@@ -1154,6 +1154,273 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun nextMedia() {
+        val curr = _uiState.value.fullscreenWindow?.currentIndex ?: return
+        moveFullscreenMedia(curr + 1)
+    }
+
+    fun previousMedia() {
+        val curr = _uiState.value.fullscreenMediaIndex ?: return
+        moveFullscreenMedia(curr - 1)
+    }
+
+    // --- Browse / Categories Actions ---
+
+    fun selectCategory(category: CategoryType?) {
+        _uiState.update { it.copy(selectedCategory = category) }
+        if (category != null) {
+            viewModelScope.launch {
+                val list = repository.getFilesByCategory(category)
+                _uiState.update { it.copy(categoryFiles = list) }
+            }
+        }
+    }
+
+    private fun calculateCategoryCounts() {
+        viewModelScope.launch {
+            val counts = repository.getCategoryCounts()
+            _uiState.update { it.copy(categoryCounts = counts) }
+        }
+    }
+
+    // --- In-App File Viewers ---
+
+    fun openFile(fileItem: FileItem) {
+        viewModelScope.launch {
+            repository.recordRecent(fileItem)
+
+            when {
+                fileItem.isImage || fileItem.isVideo -> {
+                    // Open in Fullscreen Media Viewer
+                    val mediaItem = MediaItem(
+                        id = fileItem.path.hashCode().toLong(),
+                        uri = fileItem.uri ?: android.net.Uri.fromFile(File(fileItem.path)),
+                        name = fileItem.name,
+                        path = fileItem.path,
+                        size = fileItem.size,
+                        dateAdded = fileItem.lastModified,
+                        mimeType = fileItem.mimeType,
+                        isVideo = fileItem.isVideo,
+                        isFavorite = fileItem.isFavorite
+                    )
+                    openStandaloneFullscreenMedia(mediaItem)
+                }
+                fileItem.isAudio -> {
+                    playAudio(fileItem)
+                }
+                fileItem.isArchive -> {
+                    openZip(fileItem)
+                }
+                fileItem.isTextEditable -> {
+                    openTextEditor(fileItem)
+                }
+                else -> {
+                    // Show Details
+                    openProperties(fileItem)
+                }
+            }
+        }
+    }
+
+    fun openTextEditor(fileItem: FileItem) {
+        viewModelScope.launch {
+            val text = repository.readText(fileItem.path)
+            _uiState.update {
+                it.copy(
+                    activeTextFile = fileItem,
+                    textFileContent = text,
+                    isEditingText = false
+                )
+            }
+        }
+    }
+
+    fun closeTextEditor() {
+        _uiState.update {
+            it.copy(
+                activeTextFile = null,
+                textFileContent = "",
+                isEditingText = false
+            )
+        }
+    }
+
+    fun toggleTextEditing(editing: Boolean) {
+        _uiState.update { it.copy(isEditingText = editing) }
+    }
+
+    fun updateTextContent(newContent: String) {
+        _uiState.update { it.copy(textFileContent = newContent) }
+    }
+
+    fun saveTextFile() {
+        val file = _uiState.value.activeTextFile ?: return
+        val content = _uiState.value.textFileContent
+        viewModelScope.launch {
+            val ok = repository.writeText(file.path, content)
+            if (ok) {
+                showMessage("Saved changes to ${file.name}")
+                _uiState.update { it.copy(isEditingText = false) }
+                loadFiles()
+            } else {
+                showMessage("Failed to save ${file.name}")
+            }
+        }
+    }
+
+    fun openZip(fileItem: FileItem) {
+        viewModelScope.launch {
+            val entries = repository.listZipEntries(fileItem.path)
+            _uiState.update {
+                it.copy(
+                    activeZipFile = fileItem,
+                    zipEntries = entries
+                )
+            }
+        }
+    }
+
+    fun closeZip() {
+        _uiState.update {
+            it.copy(
+                activeZipFile = null,
+                zipEntries = emptyList(),
+                isExtractingZip = false
+            )
+        }
+    }
+
+    fun extractCurrentZip() {
+        val zip = _uiState.value.activeZipFile ?: return
+        val dest = File(zip.path).parentFile?.absolutePath ?: _uiState.value.currentPath
+        val extractFolder = File(dest, zip.name.substringBeforeLast(".")).absolutePath
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isExtractingZip = true) }
+            val ok = repository.extractZip(zip.path, extractFolder)
+            _uiState.update { it.copy(isExtractingZip = false) }
+            if (ok) {
+                showMessage("Extracted to ${File(extractFolder).name}")
+                closeZip()
+                loadFiles()
+            } else {
+                showMessage("Extraction failed")
+            }
+        }
+    }
+
+    fun openProperties(fileItem: FileItem) {
+        _uiState.update { it.copy(activeDetailItem = fileItem) }
+    }
+
+    fun closeProperties() {
+        _uiState.update { it.copy(activeDetailItem = null) }
+    }
+
+    fun inspectMetadata(fileItem: FileItem) {
+        if (fileItem.isDirectory) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val report = runCatching { metadataExtractor.extract(File(fileItem.path)) }.getOrNull()
+            _uiState.update { it.copy(metadataReport = report) }
+        }
+    }
+
+    fun inspectMetadata(mediaItem: MediaItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val report = runCatching {
+                if (mediaItem.path.isNotBlank() && File(mediaItem.path).canRead()) metadataExtractor.extract(File(mediaItem.path))
+                else metadataExtractor.extractFromUri(mediaItem.uri, mediaItem.name, mediaItem.size, mediaItem.path)
+            }.getOrNull()
+            _uiState.update { it.copy(metadataReport = report) }
+        }
+    }
+
+    fun closeMetadataInspector() {
+        _uiState.update { it.copy(metadataReport = null) }
+    }
+
+    // Audio Playback
+    fun playAudio(fileItem: FileItem) {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(fileItem.path)
+                setOnPreparedListener { player ->
+                    player.start()
+                    _uiState.update {
+                        it.copy(
+                            activeAudioFile = fileItem,
+                            isAudioPlaying = true,
+                            audioDurationMs = player.duration.coerceAtLeast(0),
+                            audioPositionMs = 0
+                        )
+                    }
+                    startAudioTracking()
+                }
+                setOnCompletionListener {
+                    _uiState.update { it.copy(isAudioPlaying = false, audioPositionMs = 0) }
+                }
+                setOnErrorListener { _, _, _ ->
+                    _uiState.update { it.copy(isAudioPlaying = false) }
+                    showMessage("Could not play audio")
+                    true
+                }
+                prepareAsync()
+            }
+            _uiState.update {
+                it.copy(
+                    activeAudioFile = fileItem,
+                    isAudioPlaying = false,
+                    audioDurationMs = 0,
+                    audioPositionMs = 0
+                )
+            }
+        } catch (e: Exception) {
+            mediaPlayer?.release()
+            mediaPlayer = null
+            e.printStackTrace()
+            showMessage("Could not play audio: ${e.message}")
+        }
+    }
+
+    fun toggleAudioPlayPause() {
+        val mp = mediaPlayer ?: return
+        if (mp.isPlaying) {
+            mp.pause()
+            _uiState.update { it.copy(isAudioPlaying = false) }
+        } else {
+            mp.start()
+            _uiState.update { it.copy(isAudioPlaying = true) }
+            startAudioTracking()
+        }
+    }
+
+    fun stopAudio() {
+        mediaPlayer?.stop()
+        mediaPlayer?.release()
+        mediaPlayer = null
+        audioProgressJob?.cancel()
+        _uiState.update {
+            it.copy(
+                activeAudioFile = null,
+                isAudioPlaying = false,
+                audioDurationMs = 0,
+                audioPositionMs = 0
+            )
+        }
+    }
+
+    private fun startAudioTracking() {
+        audioProgressJob?.cancel()
+        audioProgressJob = viewModelScope.launch(Dispatchers.Main) {
+            while (isActive && mediaPlayer != null && _uiState.value.isAudioPlaying) {
+                val pos = mediaPlayer?.currentPosition ?: 0
+                _uiState.update { it.copy(audioPositionMs = pos) }
+                delay(300)
+            }
+        }
+    }
+
     // Favorites & Recents
     fun toggleFavorite(fileItem: FileItem) {
         viewModelScope.launch {
