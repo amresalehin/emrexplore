@@ -948,8 +948,7 @@ class FileRepository(private val context: Context) {
                 putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
                 putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, sortOrder)
                 putInt(ContentResolver.QUERY_ARG_LIMIT, limit)
-                putInt(ContentResolver.QUERY_ARG_OFFSET, 0)
-            }
+                            }
             context.contentResolver.query(uri, projection, queryArgs, null)
         } else {
             context.contentResolver.query(
@@ -998,7 +997,7 @@ class FileRepository(private val context: Context) {
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {
         val result = mutableListOf<FileItem>()
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
 
         when (category) {
             CategoryType.IMAGES -> {
@@ -1162,7 +1161,7 @@ class FileRepository(private val context: Context) {
 
         val q = query.trim().lowercase()
         val result = mutableListOf<FileItem>()
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
         val rootsToScan = listOf(
             File(rootPath),
             baseWorkingDir
@@ -1191,7 +1190,7 @@ class FileRepository(private val context: Context) {
 
         val normalizedDir = File(dirPath).absolutePath.removeSuffix("/")
         val pathPrefix = if (normalizedDir.isEmpty()) "/" else "$normalizedDir/"
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
 
         val indexed = fileIndexDao.searchFilesInPath(pathPrefix, q, limit)
             .asSequence()
@@ -1243,7 +1242,7 @@ class FileRepository(private val context: Context) {
     suspend fun searchIndexedFiles(query: String, category: CategoryType? = null): List<FileItem> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val q = query.trim()
-        val favSet = try { favoriteDao.getAllFavoritePathsSync().toHashSet() } catch (e: Exception) { emptySet() }
+        val favSet = try { emptySet<String>() } catch (e: Exception) { emptySet() }
         val entities = if (category != null) {
             fileIndexDao.searchFilesByCategory(q, category.name, limit = 150)
         } else {
