@@ -1007,6 +1007,7 @@ class FileRepository(private val context: Context) {
 
     suspend fun getFilesByCategory(category: CategoryType): List<FileItem> = withContext(Dispatchers.IO) {
         val result = mutableListOf<FileItem>()
+        val favSet = emptySet<String>()
 
         when (category) {
             CategoryType.IMAGES -> {
@@ -1172,6 +1173,7 @@ class FileRepository(private val context: Context) {
 
         val q = query.trim().lowercase()
         val result = mutableListOf<FileItem>()
+        val favSet = emptySet<String>()
         val rootsToScan = listOf(
             File(rootPath),
             baseWorkingDir
@@ -1202,6 +1204,7 @@ class FileRepository(private val context: Context) {
 
         val normalizedDir = File(dirPath).absolutePath.removeSuffix("/")
         val pathPrefix = if (normalizedDir.isEmpty()) "/" else "$normalizedDir/"
+        val favSet = emptySet<String>()
 
         val indexed = fileIndexDao.searchFilesInPath(pathPrefix, q, limit)
             .asSequence()
@@ -1272,7 +1275,7 @@ class FileRepository(private val context: Context) {
                 isDirectory = entity.isDirectory,
                 mimeType = entity.mimeType,
                 extension = entity.extension,
-                isFavorite = favSet.contains(entity.path),
+                isFavorite = false,
                 childCount = entity.childCount,
                 uri = Uri.fromFile(file)
             )
