@@ -397,8 +397,11 @@ fun GalleryScreen(
                     onItemClick = { item ->
                         if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                         else {
-                            val loaded = albumItems.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
-                            viewModel.openFullscreenMedia(item, loaded, FullscreenMediaSource.ALBUM, selectedAlbumId)
+                            viewModel.openFullscreenMedia(
+                                item = item,
+                                source = FullscreenMediaSource.ALBUM,
+                                albumId = selectedAlbumId
+                            )
                         }
                     },
                     onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
@@ -415,11 +418,9 @@ fun GalleryScreen(
                         onItemClick = { item ->
                             if (uiState.gallerySelection.isNotEmpty()) viewModel.toggleGallerySelection(item)
                             else {
-                            val loaded = pagedMedia.itemSnapshotList.items.filterIsInstance<GalleryGridItem.Media>().map { it.item }
                             viewModel.openFullscreenMedia(
-                                item,
-                                loaded,
-                                if (uiState.gallerySearchQuery.isNotBlank()) {
+                                item = item,
+                                source = if (uiState.gallerySearchQuery.isNotBlank()) {
                                     FullscreenMediaSource.SEARCH
                                 } else {
                                     when (uiState.galleryFilter) {
