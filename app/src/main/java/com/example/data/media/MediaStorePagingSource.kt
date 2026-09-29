@@ -90,7 +90,7 @@ class MediaStorePagingSource(
             val rowId = cursor.getLong(id)
             val isVideo = cursor.getInt(mediaType) == MediaStore.Files.FileColumns.MEDIA_TYPE_VIDEO
             val contentUri = if (isVideo) ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, rowId) else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, rowId)
-            result += MediaItem(id = if (isVideo) rowId + VIDEO_ID_OFFSET else rowId, uri = contentUri, name = cursor.getString(name) ?: "Media_$rowId", path = if (data >= 0) cursor.getString(data) ?: "" else "", size = cursor.getLong(size), dateAdded = cursor.getLong(dateAdded) * 1000L, mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*", duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L, width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0, height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0, bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "", bucketName = if (bucketName >= 0) cursor.getString(bucketName) ?: "" else "", isVideo = isVideo)
+            result += MediaItem(id = rowId, uri = contentUri, name = cursor.getString(name) ?: "Media_$rowId", path = if (data >= 0) cursor.getString(data) ?: "" else "", size = cursor.getLong(size), dateAdded = cursor.getLong(dateAdded) * 1000L, mimeType = cursor.getString(mime) ?: if (isVideo) "video/*" else "image/*", duration = if (duration >= 0 && !cursor.isNull(duration)) cursor.getLong(duration) else 0L, width = if (width >= 0 && !cursor.isNull(width)) cursor.getInt(width) else 0, height = if (height >= 0 && !cursor.isNull(height)) cursor.getInt(height) else 0, bucketId = if (bucketId >= 0) cursor.getString(bucketId) ?: "" else "", bucketName = if (bucketName >= 0) cursor.getString(bucketName) ?: "" else "", isVideo = isVideo)
         }
         return result
     }
@@ -104,8 +104,7 @@ class MediaStorePagingSource(
     companion object {
         const val MIN_PAGE_SIZE = 60
         const val MAX_PAGE_SIZE = 120
-        private const val VIDEO_ID_OFFSET = 1_000_000L
-    }
+        }
 }
 
 enum class MediaFilter { ALL, PHOTOS, VIDEOS }
