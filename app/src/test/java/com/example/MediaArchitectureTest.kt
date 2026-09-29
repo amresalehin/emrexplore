@@ -1,9 +1,7 @@
 package com.example
 
-import android.net.Uri
 import com.example.data.media.MediaCursor
 import com.example.data.media.MediaSearchParser
-import com.example.data.model.MediaItem
 import com.example.ui.viewmodel.GallerySortOption
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -11,30 +9,19 @@ import org.junit.Test
 
 class MediaArchitectureTest {
 
-    private fun item(
-        id: Long,
-        dateAdded: Long = 1_000L,
-        name: String = "photo.jpg",
-        size: Long = 100L
-    ) = MediaItem(
-        id = id,
-        uri = Uri.EMPTY,
-        name = name,
-        path = "/Pictures/$name",
-        size = size,
-        dateAdded = dateAdded,
-        mimeType = "image/jpeg"
-    )
 
     @Test
     fun mediaCursorIsStableForEveryGallerySort() {
-        val media = item(id = 42L, dateAdded = 123_000L, name = "IMG_0042.jpg", size = 2048L)
-        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(media, GallerySortOption.DATE_DESC))
-        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(media, GallerySortOption.DATE_ASC))
-        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(media, GallerySortOption.NAME_ASC))
-        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(media, GallerySortOption.NAME_DESC))
-        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(media, GallerySortOption.SIZE_ASC))
-        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(media, GallerySortOption.SIZE_DESC))
+        val id = 42L
+        val dateAddedMillis = 123_000L
+        val name = "IMG_0042.jpg"
+        val size = 2048L
+        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.DATE_DESC))
+        assertEquals(MediaCursor(longValue = 123L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.DATE_ASC))
+        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.NAME_ASC))
+        assertEquals(MediaCursor(textValue = "IMG_0042.jpg", id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.NAME_DESC))
+        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.SIZE_ASC))
+        assertEquals(MediaCursor(longValue = 2048L, id = 42L), MediaCursor.from(id, dateAddedMillis, name, size, GallerySortOption.SIZE_DESC))
     }
 
     @Test
