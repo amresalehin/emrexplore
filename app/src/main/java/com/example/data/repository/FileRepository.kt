@@ -83,6 +83,18 @@ class FileRepository(private val context: Context) {
 
     private val statCache = java.util.concurrent.ConcurrentHashMap<String, CachedStat>()
 
+    /**
+     * Compatibility invalidation hook. The whole-folder item cache was removed;
+     * only bounded filesystem stat state is invalidated after mutations.
+     */
+    fun invalidateFolderCache(dirPath: String? = null) {
+        if (dirPath == null) {
+            statCache.clear()
+        } else {
+            statCache.keys.removeIf { it == dirPath || it.startsWith(dirPath + java.io.File.separator) }
+        }
+    }
+
     val operationManager = FileOperationManager { affectedPaths ->
         for (dir in affectedPaths) {
             invalidateFolderState(dir)
