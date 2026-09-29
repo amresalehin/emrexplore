@@ -172,7 +172,15 @@ class MediaSearchPagingSource(
             limit = limit,
             sortOrder = reverseOrder
         )
-        val matched = if (p.requiresMetadata) cursor.filter { matchesMetadata(it, p) } else cursor
+        val matched = if (p.requiresMetadata) {
+            val filtered = ArrayList<MediaItem>()
+            for (candidate in cursor) {
+                if (matchesMetadata(candidate, p)) filtered += candidate
+            }
+            filtered
+        } else {
+            cursor
+        }
         return if (before) matched.asReversed() else matched
     }
 
