@@ -433,7 +433,7 @@ fun GalleryScreen(
                             }
                         },
                         onItemLongClick = { item -> viewModel.toggleGallerySelection(item) },
-                        selectedPaths = uiState.gallerySelection.map { it.path }.toSet()
+                        selectedUris = uiState.gallerySelection
                     )
                 }
                 GallerySubTab.ALBUMS -> {
