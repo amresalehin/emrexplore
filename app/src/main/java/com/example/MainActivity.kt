@@ -322,10 +322,12 @@ fun MainAppRoot(viewModel: UnifiedViewModel) {
     // 1. Fullscreen Media Viewer
     if (uiState.fullscreenMediaIndex != null) {
         FullscreenMediaViewer(
-            mediaList = uiState.fullscreenMediaList,
+            mediaList = uiState.fullscreenViewerWindow?.items ?: emptyList(),
             currentIndex = uiState.fullscreenMediaIndex ?: 0,
-            windowStartIndex = uiState.fullscreenWindowStartIndex,
-            totalCount = uiState.fullscreenTotalCount.coerceAtLeast(uiState.fullscreenMediaList.size),
+            windowStartIndex = uiState.fullscreenViewerWindow?.startIndex ?: 0,
+            totalCount = uiState.fullscreenViewerWindow?.totalCount
+                ?.coerceAtLeast(uiState.fullscreenViewerWindow?.items?.size ?: 0)
+                ?: 0,
             onClose = { viewModel.closeFullscreenMedia() },
             onIndexChange = { newIdx -> viewModel.moveFullscreenMedia(newIdx) },
             onToggleFavorite = { fileItem -> viewModel.toggleFavorite(fileItem) },
