@@ -1211,7 +1211,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                         "VIDEOS" -> MediaFilter.VIDEOS
                         else -> MediaFilter.ALL
                     }
-                    val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
+                    val anchor = if (targetIndex < viewerWindow.startIndex) {
                         viewerWindow.items.firstOrNull()
                     } else {
                         viewerWindow.items.lastOrNull()
@@ -1239,9 +1239,9 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 val anchor = if (targetIndex < state.fullscreenWindowStartIndex) {
-                    state.fullscreenMediaList.firstOrNull()
+                    viewerWindow.items.firstOrNull()
                 } else {
-                    state.fullscreenMediaList.lastOrNull()
+                    viewerWindow.items.lastOrNull()
                 } ?: return@launch
                 val window = mediaRepository.loadViewerWindow(
                     source,
