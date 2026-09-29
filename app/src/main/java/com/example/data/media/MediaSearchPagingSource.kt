@@ -526,7 +526,7 @@ private data class QueryPage(
     val exhausted: Boolean
 )
 
-private internal data class ParsedMediaSearch(
+internal data class ParsedMediaSearch(
     val type: MediaFilter? = MediaFilter.ALL,
     val nameTerms: List<String> = emptyList(),
     val album: String? = null,
@@ -557,7 +557,7 @@ private internal data class ParsedMediaSearch(
             exifTerms.isNotEmpty()
 }
 
-private data class Near(
+internal data class Near(
     val lat: Double,
     val lon: Double,
     val radiusKm: Double
