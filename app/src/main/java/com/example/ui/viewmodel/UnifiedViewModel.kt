@@ -1160,7 +1160,7 @@ class UnifiedViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun previousMedia() {
-        val curr = _uiState.value.fullscreenMediaIndex ?: return
+        val curr = _uiState.value.fullscreenWindow?.currentIndex ?: return
         moveFullscreenMedia(curr - 1)
     }
 
